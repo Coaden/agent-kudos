@@ -1,0 +1,8 @@
+interface:
+  display_name: 'Agent Kudos'
+  short_description: 'Record concrete recognition for AI agents'
+  brand_color: '#8B5CF6'
+  default_prompt: 'Use $agent-kudos to record specific, evidence-based recognition for an agent contribution.'
+
+policy:
+  allow_implicit_invocation: true

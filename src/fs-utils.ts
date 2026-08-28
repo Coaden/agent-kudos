@@ -1,0 +1,75 @@
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, relative, resolve, sep } from 'node:path';
+import { KudosError } from './errors.js';
+
+export function ensureDirectory(path: string): void {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+}
+
+export function assertNoSymlinkEscape(home: string, target: string): void {
+  const root = realpathSync(home);
+  const lexicalRoot = resolve(home);
+  const resolved = resolve(target);
+  const rel = relative(lexicalRoot, resolved);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || resolve(lexicalRoot, rel) !== resolved) {
+    throw new KudosError('UNSAFE_PATH', 'Path escapes the configured Agent Kudos home.');
+  }
+
+  let current = root;
+  for (const part of rel.split(sep).filter(Boolean)) {
+    current = resolve(current, part);
+    if (existsSync(current) && lstatSync(current).isSymbolicLink()) {
+      throw new KudosError(
+        'UNSAFE_PATH',
+        `Refusing to traverse symbolic link: ${relative(root, current)}`,
+      );
+    }
+  }
+}
+
+export function atomicWriteFile(path: string, content: string, mode = 0o600): void {
+  ensureDirectory(dirname(path));
+  const temporary = resolve(
+    dirname(path),
+    `.${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`,
+  );
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(temporary, 'wx', mode);
+    writeFileSync(descriptor, content, 'utf8');
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    renameSync(temporary, path);
+    try {
+      const directoryDescriptor = openSync(dirname(path), 'r');
+      try {
+        fsyncSync(directoryDescriptor);
+      } finally {
+        closeSync(directoryDescriptor);
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!['EINVAL', 'EISDIR', 'EPERM'].includes(code ?? '')) throw error;
+    }
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+    if (existsSync(temporary)) unlinkSync(temporary);
+  }
+}
+
+export function readJsonFile(path: string): unknown {
+  return JSON.parse(readFileSync(path, 'utf8')) as unknown;
+}

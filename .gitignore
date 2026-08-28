@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.tmp/
+*.tgz
+.DS_Store
+.env
+.env.*
+!.env.example
+.agents/
+agent-kudos.sqlite3*

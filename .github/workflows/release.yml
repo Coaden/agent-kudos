@@ -1,0 +1,39 @@
+name: Release npm package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Use an npm CLI with trusted-publishing support
+        run: npm install --global npm@latest
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run pack:check
+      - name: Verify release tag matches package version
+        run: node scripts/verify-release-tag.mjs "${{ github.event.release.tag_name }}"
+      - name: Publish stable release
+        if: ${{ !github.event.release.prerelease }}
+        run: npm publish --access public
+      - name: Publish prerelease
+        if: ${{ github.event.release.prerelease }}
+        run: npm publish --access public --tag next

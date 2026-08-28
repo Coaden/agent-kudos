@@ -1,0 +1,7 @@
+title: Agent Kudos
+description: Local-first recognition infrastructure for AI agents
+theme: jekyll-theme-cayman
+repository: Coaden/agent-kudos
+show_downloads: true
+exclude:
+  - plan.md
