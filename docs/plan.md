@@ -326,6 +326,10 @@ await client.kudos.list({
   status: "unacknowledged",
 });
 
+const changes = await client.kudos.changes({
+  after: savedWatermark,
+});
+
 await client.kudos.acknowledge({
   kudosId: "...",
   note: "Received with appropriately robotic humility.",
@@ -343,7 +347,11 @@ Provide:
 - No process termination from library code
 - Abort signal support where useful
 - Deterministic query ordering
-- Pagination for list operations
+- Context-bounded discovery: list returns compact summaries, defaults to 10, and allows at most 50
+- Opaque cursor pagination for list operations; retain offset only as a deprecated compatibility path
+- Incremental change reads with opaque monotonic watermarks, default 20 and maximum 100
+- An approximate 24 KiB item-data budget for list and change responses, with explicit `contextLimited` and continuation metadata
+- One-record full-detail reads; never include reason, evidence, notes, source, or metadata in discovery summaries
 - Filters for actor, recipient, tag, date, visibility, acknowledgment status, and revocation status
 - Statistics grouped by agent, actor, tag, and date range
 - A read-only mode
@@ -365,6 +373,7 @@ kudos agent update <id>
 kudos give <recipient>
 kudos inbox [agent]
 kudos list
+kudos changes
 kudos show <kudos-id>
 kudos acknowledge <kudos-id>
 kudos revoke <kudos-id>
@@ -467,13 +476,23 @@ The tool description must explain:
 
 ## `kudos_list`
 
-Use to inspect kudos or an inbox.
+Use to discover recent kudos or inspect an inbox without flooding agent context.
 
-Support recipient, actor, tag, status, visibility, date range, pagination, and revoked-state filters.
+Support recipient, actor, tag, status, visibility, date range, opaque cursor pagination, and revoked-state filters. Return newest-first compact summaries with IDs and current state, but omit reasons, evidence, acknowledgment/revocation notes, source, and metadata. Default to 10 items, allow at most 50, and stop earlier around a 24 KiB item-data budget. Return `total`, `hasMore`, `nextCursor`, `watermark`, and `contextLimited`. Keep numeric offset only as a deprecated compatibility option and reject combining a cursor with a nonzero offset.
 
 ## `kudos_get`
 
-Return one kudos item and its acknowledgment/revocation state.
+Return one explicitly selected full kudos item and its acknowledgment/revocation state. This is the detail API and may include reason, evidence, notes, source, and metadata for that one record.
+
+## `kudos_changes`
+
+Use for incremental synchronization and periodic inbox checks. Return compact kudos event changes after an opaque watermark, ordered by a transactionally assigned monotonic SQLite ingestion sequence rather than timestamp. Default to 20 changes, allow at most 100, and apply the same approximate 24 KiB item-data budget. Return `hasMore`, `nextCursor`, `watermark`, and `contextLimited`. When no visible changes are returned, advance `nextCursor` to the current watermark so a caller does not repeatedly scan irrelevant history.
+
+Callers should persist the returned cursor and must not drain historical pages speculatively. A watermark is opaque API data, not a timestamp contract.
+
+## Query-source decision
+
+Machine reads query SQLite. Add a rebuildable `kudos_current` table containing bounded summary fields and current acknowledgment/revocation state, updated in the same transaction as canonical events. Add a monotonic ingestion sequence to events for stable cursors and change watermarks. `WINS.md` and inbox Markdown remain human-readable projections and must not be parsed or tailed by list/get/change APIs.
 
 ## `kudos_acknowledge`
 
@@ -788,6 +807,8 @@ Test at least:
 - Revocation behavior
 - Deterministic ordering
 - Pagination
+- Five-thousand-record context bounding: the default list still returns only 10 compact summaries within the response byte budget
+- Cursor pagination without duplicates and incremental changes after a saved watermark
 - Every query filter
 - Projection rebuilding
 - Safe cleanup through the generated-files manifest

@@ -9,6 +9,8 @@ title: Agent Kudos
 
 Agent Kudos is a local-first system for recording specific, durable recognition for AI agents. It combines an append-only SQLite history, TypeScript library, polished CLI, actor-bound MCP server, generated inboxes, and `WINS.md` files—without a hosted service or account.
 
+Agent-facing reads are deliberately context-safe. Lists return only 10 compact summaries by default, full detail requires an explicit one-record lookup, and incremental consumers can save an opaque watermark instead of rereading history. `WINS.md` remains a human-readable projection; machine queries use SQLite indexes.
+
 [View the project on GitHub](https://github.com/Coaden/agent-kudos) · [Read the README](https://github.com/Coaden/agent-kudos#readme)
 
 ## Start here

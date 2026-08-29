@@ -26,20 +26,25 @@ The environment variable `AGENT_KUDOS_HOME`, an explicit API option, or CLI `--h
 ## SQLite schema
 
 - `events`: canonical, append-only versioned JSON events with indexed query fields.
+- `kudos_current`: rebuildable compact current-state index used by bounded list and change queries.
 - `agents`: current validated profile query projection.
 - `aliases`: unique alias-to-agent mapping.
 - `projection_manifest`: generated paths eligible for constrained cleanup.
 - `schema_migrations`: applied database migrations.
 
-The database uses SQLite schema version 1. An unsupported newer version fails closed.
+The database uses SQLite schema version 2. An unsupported newer version fails closed.
 
-Events are ordered deterministically by `(createdAt, id)`. ULIDs provide sortable, collision-resistant identifiers. Acknowledgment and revocation reference the original kudos ID.
+Events receive a monotonic ingestion sequence inside the write transaction. That sequence provides stable cursor and watermark ordering even when timestamps collide. ULIDs remain collision-resistant public identifiers. Acknowledgment and revocation reference the original kudos ID.
+
+`kudos_current` contains only bounded summary fields and current acknowledgment/revocation state. It is updated in the same transaction as each canonical event and can be rebuilt from events during migration. `doctor` checks its record count. Full reasons, evidence, notes, source data, and metadata remain only in canonical events and are returned through an explicit one-record detail read.
 
 Actor-scoped idempotency uses a unique index on `(actor kind, actor ID, idempotency key)` for `kudos.given` events. Similar titles or reasons are not treated as duplicates.
 
 ## Generated files
 
-`profile.json`, `WINS.md`, and inbox entries are rebuildable views. Normal mutations synchronize only the affected agent and changed inbox entries; `kudos rebuild` performs a full deterministic regeneration. Markdown content is escaped. Revoked recognition is excluded from ordinary wins. Only active, unacknowledged items appear in inboxes.
+`kudos_current`, `profile.json`, `WINS.md`, and inbox entries are rebuildable views. Normal mutations update the current-state index transactionally and synchronize only the affected agent and changed inbox entries; `kudos rebuild` performs a full deterministic regeneration from canonical events. Markdown content is escaped. Revoked recognition is excluded from ordinary wins. Only active, unacknowledged items appear in inboxes.
+
+Markdown is for people and portability. `kudos_list`, `kudos_get`, and `kudos_changes` query SQLite rather than parsing or tailing `WINS.md`.
 
 `NOTES.md` is created once as a convenience and never overwritten or tracked in the generated manifest.
 

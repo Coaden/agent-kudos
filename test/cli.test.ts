@@ -87,8 +87,9 @@ describe('CLI', () => {
     client.storage
       .db()
       .prepare(
-        `INSERT INTO events(id, schema_version, type, created_at, actor_kind, actor_id, payload)
-         VALUES (?, 1, 'future', ?, 'system', 'future', ?)`,
+        `INSERT INTO events(id, schema_version, type, created_at, actor_kind, actor_id, payload, sequence)
+         VALUES (?, 1, 'future', ?, 'system', 'future', ?,
+           (SELECT COALESCE(MAX(sequence), 0) + 1 FROM events))`,
       )
       .run(
         '01ARZ3NDEKTSV4RRFFQ69G5FAB',
@@ -163,6 +164,13 @@ describe('CLI', () => {
     const id = given.record.event.id;
     expect(await invoke(['inbox', 'codex'])).toContain(id);
     expect(await invoke(['list', '--tag', 'review'])).toContain(id);
+    const compact = JSON.parse(await invoke(['list', '--tag', 'review', '--json'])) as {
+      items: Array<Record<string, unknown>>;
+      limit: number;
+    };
+    expect(compact.limit).toBe(10);
+    expect(compact.items[0]).not.toHaveProperty('reason');
+    expect(await invoke(['changes'])).toContain('kudos.given');
     expect(await invoke(['show', id])).toContain('Complete review');
     expect(await invoke(['wins', 'codex', '--print'])).toContain(id);
     await invoke(['acknowledge', id, '--as', 'codex', '--note', 'Reviewed.']);

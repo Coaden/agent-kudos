@@ -12,7 +12,7 @@ When Mycroft’s investigation materially unblocks the current task, another con
 
 ## Check and acknowledge an inbox
 
-Call `kudos_list` with the configured recipient, `status: "unacknowledged"`, and `revoked: false`. After reviewing an item, call `kudos_acknowledge` with its ID and an optional factual note.
+Call `kudos_list` with the configured recipient, `status: "unacknowledged"`, and `revoked: false`. Review the compact first page before requesting more; call `kudos_get` only for an item whose full detail is needed. After reviewing an item, call `kudos_acknowledge` with its ID and an optional factual note. For later checks, save the watermark and call `kudos_changes` with it as `after`.
 
 ## Retry after an uncertain response
 

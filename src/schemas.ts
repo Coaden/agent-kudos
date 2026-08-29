@@ -164,7 +164,7 @@ export const eventSchema = z.discriminatedUnion('type', [
   agentUpdatedSchema,
 ]);
 
-export const giveKudosSchema = kudosGivenSchema
+const giveKudosInputSchema = kudosGivenSchema
   .omit({
     schemaVersion: true,
     id: true,
@@ -173,18 +173,46 @@ export const giveKudosSchema = kudosGivenSchema
     actor: true,
     recipientDisplayName: true,
   })
-  .extend({ title: kudosTitleSchema });
+  .extend({
+    title: kudosTitleSchema,
+    evidence: z.array(evidenceSchema).max(10).optional(),
+    tags: z.array(kudosTagSchema).max(20).optional(),
+  });
 
-export const listInputSchema = z.object({
-  recipientAgentId: agentIdSchema.optional(),
-  actorId: agentIdSchema.optional(),
-  actorKind: z.enum(['human', 'agent', 'system']).optional(),
-  tag: z.string().trim().min(1).max(64).optional(),
-  status: z.enum(['acknowledged', 'unacknowledged']).optional(),
-  visibility: z.enum(['private', 'local', 'public']).optional(),
-  revoked: z.boolean().optional(),
-  from: z.string().datetime({ offset: true }).optional(),
-  to: z.string().datetime({ offset: true }).optional(),
-  limit: z.number().int().min(1).max(200).default(50),
-  offset: z.number().int().min(0).default(0),
+function enforceKudosPayloadSize(value: unknown, context: z.RefinementCtx): void {
+  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 32_768) {
+    context.addIssue({ code: 'custom', message: 'Kudos payload must not exceed 32 KiB' });
+  }
+}
+
+export const giveKudosSchema = giveKudosInputSchema.superRefine(enforceKudosPayloadSize);
+
+export const giveKudosMcpSchema = giveKudosInputSchema
+  .extend({ visibility: z.enum(['private', 'local', 'public']).optional() })
+  .superRefine(enforceKudosPayloadSize);
+
+export const listInputSchema = z
+  .object({
+    recipientAgentId: agentIdSchema.optional(),
+    actorId: agentIdSchema.optional(),
+    actorKind: z.enum(['human', 'agent', 'system']).optional(),
+    tag: z.string().trim().min(1).max(64).optional(),
+    status: z.enum(['acknowledged', 'unacknowledged']).optional(),
+    visibility: z.enum(['private', 'local', 'public']).optional(),
+    revoked: z.boolean().optional(),
+    from: z.string().datetime({ offset: true }).optional(),
+    to: z.string().datetime({ offset: true }).optional(),
+    cursor: z.string().min(1).max(500).optional(),
+    limit: z.number().int().min(1).max(50).default(10),
+    offset: z.number().int().min(0).default(0),
+  })
+  .superRefine((value, context) => {
+    if (value.cursor && value.offset > 0) {
+      context.addIssue({ code: 'custom', message: 'Use either cursor or offset pagination' });
+    }
+  });
+
+export const changesInputSchema = z.object({
+  after: z.string().min(1).max(500).optional(),
+  limit: z.number().int().min(1).max(100).default(20),
 });

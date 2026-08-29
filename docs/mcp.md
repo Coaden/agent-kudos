@@ -52,6 +52,7 @@ These CLI forms were verified against the installed Codex and Claude Code help. 
 | `kudos_give`         | Record specific recognition            | Actor-bound; self-awards denied by default |
 | `kudos_list`         | Filter recognition or inspect an inbox | Read-only; visibility-aware                |
 | `kudos_get`          | Read one item and derived state        | Read-only; visibility-aware                |
+| `kudos_changes`      | Read changes after a saved watermark   | Read-only; visibility-aware                |
 | `kudos_acknowledge`  | Record recipient review                | Agent may acknowledge only its own kudos   |
 | `kudos_revoke`       | Append a reasoned revocation           | Original actor or human administrator      |
 | `kudos_stats`        | Aggregate counts                       | Omits private content by default           |
@@ -61,6 +62,8 @@ These CLI forms were verified against the installed Codex and Claude Code help. 
 | `kudos_doctor`       | Run safe diagnostics                   | Read-only                                  |
 
 Every tool declares a precise JSON schema, behavior guidance, MCP annotations, concise text content, structured content, the bound actor, and stable Agent Kudos error codes.
+
+`kudos_list` is a bounded discovery feed: 10 compact summaries by default, maximum 50. It excludes reasons, evidence, notes, source, and metadata. Use `nextCursor` to continue and `kudos_get` for a single full record. `kudos_changes` is the polling feed: 20 compact changes by default, maximum 100, starting after an opaque `after` watermark. Both feeds also enforce an approximate 24 KiB item-data budget and report when that budget shortened a page.
 
 ## Resources
 
@@ -72,7 +75,7 @@ kudos://agents/<agent-id>/inbox
 kudos://events/<event-id>
 ```
 
-An agent actor may read only its own inbox resource. Private recognition is visible only to its recipient, giver, or a configured human actor.
+An agent actor may read only its own inbox resource. Wins and inbox resources return only their 10 most recent compact summaries plus continuation metadata. Private recognition is visible only to its recipient, giver, or a configured human actor.
 
 ## Prompts
 

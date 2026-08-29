@@ -123,6 +123,7 @@ export class ProjectionManager {
   rebuild(): { generated: string[]; removed: string[] } {
     this.storage.assertWritable();
     const events = this.storage.getEvents();
+    this.storage.transaction(() => this.storage.rebuildKudosCurrentIndex());
     const profiles = this.storage.listAgents();
     const records = recordsFromEvents(events);
     const rebuiltAt = events.at(-1)?.createdAt ?? new Date(0).toISOString();

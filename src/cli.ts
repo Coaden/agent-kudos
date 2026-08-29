@@ -8,7 +8,13 @@ import { KudosClient } from './client.js';
 import { asKudosError, KudosError, type KudosErrorCode } from './errors.js';
 import { atomicWriteFile } from './fs-utils.js';
 import { startMcpServer } from './mcp/index.js';
-import type { ActorIdentity, EvidenceReference, KudosListInput, KudosRecord } from './types.js';
+import type {
+  ActorIdentity,
+  EvidenceReference,
+  KudosListInput,
+  KudosRecord,
+  KudosSummary,
+} from './types.js';
 import { packageVersion } from './version.js';
 
 export interface CliIo {
@@ -55,9 +61,14 @@ function exitCode(code: KudosErrorCode): number {
   return 2;
 }
 
-function lineForRecord(record: KudosRecord): string {
-  const state = record.revocation ? 'revoked' : record.acknowledgment ? 'acknowledged' : 'new';
-  return `${record.event.id}  ${record.event.createdAt.slice(0, 10)}  ${record.event.recipientAgentId}  [${state}]  ${record.event.title}`;
+function lineForSummary(record: KudosSummary): string {
+  const state =
+    record.revocationStatus === 'revoked'
+      ? 'revoked'
+      : record.status === 'acknowledged'
+        ? 'acknowledged'
+        : 'new';
+  return `${record.id}  ${record.createdAt.slice(0, 10)}  ${record.recipientAgentId}  [${state}]  ${record.title}`;
 }
 
 function showRecord(record: KudosRecord): string {
@@ -118,7 +129,8 @@ function addListOptions(command: Command): Command {
     )
     .option('--from-date <iso>')
     .option('--to-date <iso>')
-    .option('--limit <number>', 'maximum results', '50')
+    .option('--limit <number>', 'maximum results (default 10, maximum 50)', '10')
+    .option('--cursor <cursor>', 'opaque cursor returned by the previous page')
     .option('--offset <number>', 'pagination offset', '0');
 }
 
@@ -136,6 +148,7 @@ function listInput(options: Record<string, string>): KudosListInput {
     ...(options.revoked === 'exclude' ? { revoked: false } : {}),
     ...(options.fromDate ? { from: options.fromDate } : {}),
     ...(options.toDate ? { to: options.toDate } : {}),
+    ...(options.cursor ? { cursor: options.cursor } : {}),
     limit: Number(options.limit),
     offset: Number(options.offset),
   };
@@ -315,43 +328,80 @@ export function createCli(io: CliIo = defaultIo): Command {
     .command('inbox [agent]')
     .description('Show unacknowledged, active kudos for an agent')
     .option('--as <agent-id>', 'defaults to the positional agent')
-    .action(async (agentId: string | undefined, options: { as?: string }, command: Command) => {
-      const global = globals(command);
-      const recipient = agentId ?? options.as;
-      if (!recipient) throw new KudosError('INVALID_INPUT', 'Specify an agent inbox.');
-      const page = await withClient(
-        global.home,
-        actor('agent', options.as ?? recipient),
-        (client) =>
-          client.kudos.list({
-            recipientAgentId: recipient,
-            status: 'unacknowledged',
-            revoked: false,
-            limit: 200,
-          }),
-      );
-      output(
-        io,
-        global.json,
-        page,
-        page.items.length ? page.items.map(lineForRecord).join('\n') : 'Inbox is clear.',
-      );
-    });
+    .option('--limit <number>', 'maximum results (default 10, maximum 50)', '10')
+    .option('--cursor <cursor>', 'opaque cursor returned by the previous page')
+    .action(
+      async (
+        agentId: string | undefined,
+        options: { as?: string; limit: string; cursor?: string },
+        command: Command,
+      ) => {
+        const global = globals(command);
+        const recipient = agentId ?? options.as;
+        if (!recipient) throw new KudosError('INVALID_INPUT', 'Specify an agent inbox.');
+        const page = await withClient(
+          global.home,
+          actor('agent', options.as ?? recipient),
+          (client) =>
+            client.kudos.list({
+              recipientAgentId: recipient,
+              status: 'unacknowledged',
+              revoked: false,
+              limit: Number(options.limit),
+              ...(options.cursor ? { cursor: options.cursor } : {}),
+            }),
+        );
+        output(
+          io,
+          global.json,
+          page,
+          page.items.length
+            ? `${page.items.map(lineForSummary).join('\n')}${page.hasMore ? `\nNext cursor: ${page.nextCursor}` : ''}`
+            : 'Inbox is clear.',
+        );
+      },
+    );
 
   addListOptions(program.command('list').description('List and filter kudos')).action(
     async (options: Record<string, string>, command: Command) => {
       const global = globals(command);
-      const page = await withClient(global.home, actor('system', 'cli'), (client) =>
+      const page = await withClient(global.home, actor('human', 'local-cli'), (client) =>
         client.kudos.list(listInput(options)),
       );
       output(
         io,
         global.json,
         page,
-        page.items.length ? page.items.map(lineForRecord).join('\n') : 'No kudos found.',
+        page.items.length
+          ? `${page.items.map(lineForSummary).join('\n')}${page.hasMore ? `\nNext cursor: ${page.nextCursor}` : ''}`
+          : 'No kudos found.',
       );
     },
   );
+
+  program
+    .command('changes')
+    .description('List compact kudos changes after an opaque watermark')
+    .option('--after <watermark>', 'watermark or change cursor from a previous response')
+    .option('--limit <number>', 'maximum changes (default 20, maximum 100)', '20')
+    .action(async (options: { after?: string; limit: string }, command: Command) => {
+      const global = globals(command);
+      const page = await withClient(global.home, actor('human', 'local-cli'), (client) =>
+        client.kudos.changes({
+          limit: Number(options.limit),
+          ...(options.after ? { after: options.after } : {}),
+        }),
+      );
+      const human = page.items.length
+        ? `${page.items
+            .map(
+              (change) =>
+                `${change.sequence}  ${change.createdAt}  ${change.type}  ${change.kudosId ?? '-'}`,
+            )
+            .join('\n')}\nWatermark: ${page.nextCursor}`
+        : `No new kudos changes. Watermark: ${page.watermark}`;
+      output(io, global.json, page, human);
+    });
 
   program
     .command('show <kudos-id>')
@@ -478,7 +528,7 @@ export function createCli(io: CliIo = defaultIo): Command {
 
   program
     .command('rebuild')
-    .description('Regenerate filesystem projections from canonical events')
+    .description('Regenerate current-state and filesystem projections from canonical events')
     .action(async (_options, command: Command) => {
       const global = globals(command);
       const result = await withClient(global.home, actor('system', 'cli'), (client) =>

@@ -174,7 +174,12 @@ describe('KudosClient identities and events', () => {
     expect(page.total).toBe(2);
     expect(page.items).toHaveLength(1);
     const all = await human.kudos.list({ limit: 10 });
-    expect(all.items[0]!.event.createdAt >= all.items[1]!.event.createdAt).toBe(true);
+    expect(all.items[0]!.createdAt >= all.items[1]!.createdAt).toBe(true);
+    expect(all.items[0]).not.toHaveProperty('reason');
+    expect(all.items[0]).not.toHaveProperty('evidence');
+    const firstPage = await human.kudos.list({ limit: 1 });
+    const next = await human.kudos.list({ limit: 1, cursor: firstPage.nextCursor! });
+    expect(next.items[0]?.id).not.toBe(firstPage.items[0]?.id);
     const stats = await human.stats();
     expect(stats.total).toBe(1);
     expect(stats.byTag.review).toBe(1);
@@ -191,5 +196,31 @@ describe('KudosClient identities and events', () => {
       readonly.agents.create({ id: 'mycroft', displayName: 'Mycroft' }),
     ).rejects.toBeInstanceOf(KudosError);
     await readonly.close();
+  });
+
+  it('returns only changes after a durable opaque watermark', async () => {
+    const home = tempHome();
+    const human = await seed(home);
+    await human.kudos.give({
+      recipientAgentId: 'codex',
+      title: 'Baseline contribution',
+      reason: 'Establishes the initial synchronization point.',
+    });
+    const watermark = (await human.kudos.list()).watermark;
+    const later = await human.kudos.give({
+      recipientAgentId: 'gracie',
+      title: 'Later contribution',
+      reason: 'Was recorded after the synchronization point.',
+    });
+    await human.kudos.acknowledge({ kudosId: later.record.event.id });
+
+    const changes = await human.kudos.changes({ after: watermark });
+    expect(changes.items.map((item) => item.type)).toEqual(['kudos.given', 'kudos.acknowledged']);
+    expect(changes.items.every((item) => item.kudosId === later.record.event.id)).toBe(true);
+    expect(changes.items[0]?.summary).not.toHaveProperty('reason');
+    const caughtUp = await human.kudos.changes({ after: changes.nextCursor });
+    expect(caughtUp.items).toEqual([]);
+    expect(caughtUp.nextCursor).toBeDefined();
+    await human.close();
   });
 });

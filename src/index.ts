@@ -5,10 +5,12 @@ export { escapeMarkdown, recordsFromEvents } from './projections.js';
 export {
   actorSchema,
   agentIdSchema,
+  changesInputSchema,
   createAgentSchema,
   eventSchema,
   evidenceSchema,
   giveKudosSchema,
+  giveKudosMcpSchema,
   kudosTagSchema,
   kudosTitleSchema,
   listInputSchema,

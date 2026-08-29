@@ -17,6 +17,7 @@ This repository is a public TypeScript package. Changes should be reviewable, po
 - Agent IDs are validated stable identities; aliases never silently merge identities.
 - MCP writes use the actor bound at server startup. Tool arguments cannot override it.
 - `WINS.md`, inbox files, and `profile.json` are generated projections. `NOTES.md` is human-owned and must never be overwritten.
+- Machine reads stay context-bounded: compact list/change feeds have conservative defaults, hard limits, byte budgets, and opaque cursors. `WINS.md` is not a machine query source.
 - Projection cleanup may remove only regular files listed in the generated-files manifest.
 - Normal mutations must not rebuild or rewrite every pending inbox entry; full regeneration belongs to the explicit rebuild operation.
 - `system` actors are automation identities and have no implicit agent or administrative authority.

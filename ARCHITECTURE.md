@@ -21,7 +21,13 @@ A single package keeps types, validation, policy, migrations, and behavior consi
 - `kudos.revoked` records withdrawal without deleting history.
 - `agent.created` and `agent.updated` preserve identity history.
 
-Agent profile rows and aliases are transactional query indexes. Historical events keep the identifiers and display names captured when written.
+Agent profile rows, aliases, and `kudos_current` are transactional query indexes. Historical events keep the identifiers and display names captured when written. Every event receives a database ingestion sequence; that monotonic sequence—not a wall-clock timestamp—drives opaque synchronization watermarks.
+
+## Context-bounded reads
+
+Machine-facing discovery never reconstructs and returns the whole event history. `kudos_list` reads the indexed current state, returns 10 compact summaries by default (maximum 50), and omits unbounded detail fields. `kudos_get` reconstructs one requested kudos record. `kudos_changes` returns compact changes after an opaque sequence watermark, 20 by default (maximum 100). List and change item payloads also stop at an approximate 24 KiB byte budget and report `contextLimited` plus a continuation cursor.
+
+This split makes context consumption proportional to the caller's explicit request even when the database contains thousands of records. `WINS.md` is a human projection and is not a machine query source.
 
 ## Concurrency and durability
 
@@ -48,6 +54,6 @@ Projection timestamps use the newest canonical event timestamp, so repeated rebu
 
 ## Versioning
 
-Database and event schemas start at version 1. Migrations are keyed by SQLite `user_version` and recorded in `schema_migrations`. A newer database schema fails closed. Unsupported or malformed event rows are identified by storage ID in diagnostics, omitted from tolerant read models, and preserved by raw JSON/JSONL export. Writes and full projection rebuilds fail closed while any event semantics are unknown, preventing an older client from deriving and persistently acting on incomplete state.
+Event payload schemas start at version 1. The SQLite schema is version 2; migrations are keyed by SQLite `user_version` and recorded in `schema_migrations`. A newer database schema fails closed. Unsupported or malformed event rows are identified by storage ID in diagnostics, omitted from tolerant read models, and preserved by raw JSON/JSONL export. Writes and full projection rebuilds fail closed while any event semantics are unknown, preventing an older client from deriving and persistently acting on incomplete state.
 
 Pre-1.0 public APIs may change with release notes; persisted event semantics should remain migratable.

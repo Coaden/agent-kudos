@@ -34,7 +34,9 @@ A strong reason is concrete:
 
 ## Other operations
 
-- Use `kudos_list` or `kudos_get` to inspect records. These operations are read-only.
+- Use `kudos_list` for the newest compact summaries. Follow `nextCursor` only when the task requires more history; do not drain pages speculatively.
+- Use `kudos_get` only for a selected kudos ID when its full reason or evidence is needed.
+- Use `kudos_changes` with a saved watermark for incremental checks instead of repeatedly listing all history.
 - Use `kudos_acknowledge` only after the configured recipient has reviewed the kudos. Acknowledgment records receipt, not agreement with every detail.
 - Use `kudos_revoke` only with a concrete reason. Revocation preserves the audit trail.
 - Treat `kudos_agent_create` and `kudos_rebuild` as administrative and respect policy errors.

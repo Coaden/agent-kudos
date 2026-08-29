@@ -38,6 +38,7 @@ describe('MCP protocol integration', () => {
       expect.arrayContaining([
         'kudos_give',
         'kudos_list',
+        'kudos_changes',
         'kudos_get',
         'kudos_acknowledge',
         'kudos_revoke',
@@ -114,6 +115,22 @@ describe('MCP protocol integration', () => {
       },
     });
     expect(retry.structuredContent).toMatchObject({ data: { deduplicated: true } });
+
+    const list = await protocolClient.callTool({ name: 'kudos_list', arguments: {} });
+    const listData = (list.structuredContent as { data: { items: unknown[]; limit: number } }).data;
+    expect(listData.limit).toBe(10);
+    expect(listData.items).toHaveLength(1);
+    expect(listData.items[0]).toMatchObject({
+      id: kudosId,
+      title: 'Caught a continuity contradiction',
+    });
+    expect(listData.items[0]).not.toHaveProperty('event');
+    expect(listData.items[0]).not.toHaveProperty('reason');
+
+    const changes = await protocolClient.callTool({ name: 'kudos_changes', arguments: {} });
+    expect(changes.structuredContent).toMatchObject({
+      data: { limit: 20, items: [{ type: 'kudos.given', kudosId }] },
+    });
 
     const selfAward = await protocolClient.callTool({
       name: 'kudos_give',

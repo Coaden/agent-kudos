@@ -101,8 +101,24 @@ export interface KudosRecord {
   revocationStatus: RevocationStatus;
 }
 
+/** Context-safe discovery view. Fetch the full record explicitly with kudos.get(). */
+export interface KudosSummary {
+  id: string;
+  createdAt: string;
+  recipientAgentId: string;
+  recipientDisplayName: string;
+  actor: ActorIdentity;
+  title: string;
+  tags: string[];
+  visibility: Visibility;
+  status: AcknowledgmentStatus;
+  revocationStatus: RevocationStatus;
+}
+
 export interface PaginationInput {
   limit?: number;
+  cursor?: string;
+  /** @deprecated Prefer cursor pagination. */
   offset?: number;
 }
 
@@ -123,6 +139,36 @@ export interface Page<T> {
   total: number;
   limit: number;
   offset: number;
+  nextCursor?: string;
+  hasMore: boolean;
+  watermark: string;
+  contextLimited: boolean;
+}
+
+export interface KudosChange {
+  cursor: string;
+  sequence: number;
+  eventId: string;
+  type: KudosEvent['type'];
+  createdAt: string;
+  actor: ActorIdentity;
+  kudosId?: string;
+  recipientAgentId?: string;
+  summary?: KudosSummary;
+}
+
+export interface KudosChangesInput {
+  after?: string;
+  limit?: number;
+}
+
+export interface ChangePage {
+  items: KudosChange[];
+  limit: number;
+  nextCursor?: string;
+  hasMore: boolean;
+  watermark: string;
+  contextLimited: boolean;
 }
 
 export interface GiveKudosInput {

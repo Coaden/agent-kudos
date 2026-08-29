@@ -7,13 +7,12 @@ import { KudosError, asKudosError } from '../errors.js';
 import {
   actorSchema,
   agentIdSchema,
-  evidenceSchema,
-  kudosTagSchema,
-  kudosTitleSchema,
+  changesInputSchema,
+  giveKudosMcpSchema,
   listInputSchema,
 } from '../schemas.js';
 import { packageVersion } from '../version.js';
-import type { ActorIdentity, KudosClientOptions, KudosListInput, KudosRecord } from '../types.js';
+import type { ActorIdentity, KudosClientOptions, KudosRecord } from '../types.js';
 
 export interface AgentKudosMcpOptions extends Omit<KudosClientOptions, 'actor'> {
   actor: ActorIdentity;
@@ -66,20 +65,6 @@ function canView(actor: ActorIdentity, record: KudosRecord): boolean {
   );
 }
 
-async function allRecords(client: KudosClient, input: KudosListInput): Promise<KudosRecord[]> {
-  const records: KudosRecord[] = [];
-  let offset = 0;
-  let total = 0;
-  do {
-    const page = await client.kudos.list({ ...input, limit: 200, offset });
-    records.push(...page.items);
-    total = page.total;
-    if (page.items.length === 0) break;
-    offset += page.items.length;
-  } while (offset < total);
-  return records;
-}
-
 function describeRecord(record: KudosRecord): string {
   return `${record.event.recipientDisplayName} received “${record.event.title}” on ${record.event.createdAt.slice(0, 10)} (ID ${record.event.id}).`;
 }
@@ -110,15 +95,7 @@ export async function createAgentKudosMcpServer(
       title: 'Give kudos',
       description:
         'Use when a human explicitly requests recognition or a peer agent made a concrete, unusually useful contribution. State what the recipient did and why it mattered. Do not use for routine completion, generic politeness, self-congratulation, invented work, secrets, or raw sensitive tool output.',
-      inputSchema: z.object({
-        recipientAgentId: agentIdSchema,
-        title: kudosTitleSchema,
-        reason: z.string().trim().min(1).max(5000),
-        evidence: z.array(evidenceSchema).max(50).optional(),
-        tags: z.array(kudosTagSchema).max(50).optional(),
-        visibility: z.enum(['private', 'local', 'public']).optional(),
-        idempotencyKey: z.string().trim().min(1).max(200).optional(),
-      }),
+      inputSchema: giveKudosMcpSchema,
       outputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
@@ -141,22 +118,43 @@ export async function createAgentKudosMcpServer(
     {
       title: 'List kudos',
       description:
-        'Use to inspect recognition history or an inbox. This is read-only. Private kudos are visible only to the recipient, giver, or a configured human actor.',
+        'Return a context-safe page of compact kudos summaries, newest first. The default is 10 and maximum is 50. Use nextCursor for another page and kudos_get only for records whose full reason or evidence is needed.',
       inputSchema: listInputSchema,
       outputSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
     async (input) => {
       try {
-        const records = await allRecords(client, input);
-        const visible = records.filter((record) => canView(actor, record));
-        const items = visible.slice(input.offset, input.offset + input.limit);
-        return success(actor, `Found ${visible.length} visible kudos item(s).`, {
-          items,
-          total: visible.length,
-          limit: input.limit,
-          offset: input.offset,
-        });
+        const page = await client.kudos.list(input);
+        return success(
+          actor,
+          `Returned ${page.items.length} of ${page.total} visible kudos summaries${page.hasMore ? '; use nextCursor to continue' : ''}.`,
+          page,
+        );
+      } catch (error) {
+        return failure(actor, error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'kudos_changes',
+    {
+      title: 'Get kudos changes',
+      description:
+        'Return compact kudos changes after an opaque watermark. Persist nextCursor (or watermark when empty) and pass it as after on the next poll. The default is 20 and maximum is 100.',
+      inputSchema: changesInputSchema,
+      outputSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    async (input) => {
+      try {
+        const page = await client.kudos.changes(input);
+        return success(
+          actor,
+          `Returned ${page.items.length} visible kudos change(s)${page.hasMore ? '; use nextCursor to continue' : ''}.`,
+          page,
+        );
       } catch (error) {
         return failure(actor, error);
       }
@@ -322,7 +320,7 @@ export async function createAgentKudosMcpServer(
     {
       title: 'Rebuild projections',
       description:
-        'Administrative operation that deterministically regenerates WINS.md and inbox projections.',
+        'Administrative operation that deterministically regenerates the SQLite current-state index, WINS.md, and inbox projections.',
       inputSchema: z.object({}),
       outputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
@@ -411,24 +409,21 @@ export async function createAgentKudosMcpServer(
     new ResourceTemplate('kudos://agents/{agentId}/wins', { list: undefined }),
     {
       title: 'Agent wins',
-      description: 'Visible, active kudos for one agent',
+      description: 'Ten most recent visible, active kudos summaries for one agent',
       mimeType: 'application/json',
     },
     async (uri, { agentId }) => {
-      const records = await allRecords(client, {
+      const page = await client.kudos.list({
         recipientAgentId: String(agentId),
         revoked: false,
+        limit: 10,
       });
       return {
         contents: [
           {
             uri: uri.href,
             mimeType: 'application/json',
-            text: JSON.stringify(
-              records.filter((record) => canView(actor, record)),
-              null,
-              2,
-            ),
+            text: JSON.stringify(page, null, 2),
           },
         ],
       };
@@ -440,7 +435,7 @@ export async function createAgentKudosMcpServer(
     new ResourceTemplate('kudos://agents/{agentId}/inbox', { list: undefined }),
     {
       title: 'Agent inbox',
-      description: 'Visible unacknowledged kudos for one agent',
+      description: 'Ten most recent visible, unacknowledged kudos summaries for one agent',
       mimeType: 'application/json',
     },
     async (uri, { agentId }) => {
@@ -449,21 +444,18 @@ export async function createAgentKudosMcpServer(
       if (actor.kind === 'agent' && profile.id !== actor.id) {
         throw new KudosError('POLICY_FORBIDDEN', 'An agent may read only its own inbox resource.');
       }
-      const records = await allRecords(client, {
+      const page = await client.kudos.list({
         recipientAgentId: profile.id,
         status: 'unacknowledged',
         revoked: false,
+        limit: 10,
       });
       return {
         contents: [
           {
             uri: uri.href,
             mimeType: 'application/json',
-            text: JSON.stringify(
-              records.filter((record) => canView(actor, record)),
-              null,
-              2,
-            ),
+            text: JSON.stringify(page, null, 2),
           },
         ],
       };

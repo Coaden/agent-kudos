@@ -12,6 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ulid } from 'ulid';
 import { KudosClient } from '../src/index.js';
 import { tempHome, testClient } from './helpers.js';
 
@@ -104,8 +105,9 @@ describe('SQLite storage and projections', () => {
     client.storage
       .db()
       .prepare(
-        `INSERT INTO events(id, schema_version, type, created_at, actor_kind, actor_id, payload)
-         VALUES (?, 1, 'unknown', ?, 'system', 'test', ?)`,
+        `INSERT INTO events(id, schema_version, type, created_at, actor_kind, actor_id, payload, sequence)
+         VALUES (?, 1, 'unknown', ?, 'system', 'test', ?,
+           (SELECT COALESCE(MAX(sequence), 0) + 1 FROM events))`,
       )
       .run(
         unsupportedId,
@@ -142,7 +144,7 @@ describe('SQLite storage and projections', () => {
     const dbPath = initialized.storage.databasePath;
     await initialized.close();
     const raw = new DatabaseSync(dbPath);
-    raw.exec('PRAGMA user_version = 2');
+    raw.exec('PRAGMA user_version = 3');
     raw.close();
     const unsupported = new KudosClient({ home: otherHome, readOnly: true });
     await expect(unsupported.init()).rejects.toMatchObject({ code: 'UNSUPPORTED_SCHEMA' });
@@ -210,14 +212,63 @@ describe('SQLite storage and projections', () => {
     expect(
       (client.storage.db().prepare('PRAGMA user_version').get() as { user_version: number })
         .user_version,
-    ).toBe(1);
+    ).toBe(2);
     expect(
       (
         client.storage.db().prepare('SELECT COUNT(*) AS count FROM schema_migrations').get() as {
           count: number;
         }
       ).count,
-    ).toBe(1);
+    ).toBe(2);
+    await client.close();
+  });
+
+  it('migrates version one events into the sequence and current-state index', async () => {
+    const home = tempHome();
+    const initial = await testClient(home);
+    await initial.agents.create({ id: 'codex', displayName: 'Codex' });
+    const given = await initial.kudos.give({
+      recipientAgentId: 'codex',
+      title: 'Pre-index recognition',
+      reason: 'Represents a record created under database schema version one.',
+    });
+    const path = initial.storage.databasePath;
+    await initial.close();
+
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      DROP TRIGGER events_sequence_required;
+      DROP INDEX events_sequence;
+      DROP TABLE kudos_current;
+      ALTER TABLE events DROP COLUMN sequence;
+      DELETE FROM schema_migrations WHERE version = 2;
+      PRAGMA user_version = 1;
+    `);
+    legacy.close();
+
+    const migrated = await testClient(home);
+    expect(
+      (migrated.storage.db().prepare('PRAGMA user_version').get() as { user_version: number })
+        .user_version,
+    ).toBe(2);
+    expect((await migrated.kudos.list()).items[0]?.id).toBe(given.record.event.id);
+    expect(migrated.storage.currentIndexCounts()).toEqual({ given: 1, indexed: 1 });
+    await migrated.close();
+  });
+
+  it('diagnoses and rebuilds a missing current-state index row', async () => {
+    const client = await testClient(tempHome());
+    await client.agents.create({ id: 'codex', displayName: 'Codex' });
+    await client.kudos.give({
+      recipientAgentId: 'codex',
+      title: 'Recoverable recognition',
+      reason: 'Canonical history can recreate a damaged derived query index.',
+    });
+    client.storage.db().prepare('DELETE FROM kudos_current').run();
+    expect(await client.doctor()).toMatchObject({ healthy: false });
+    client.projections.rebuild();
+    expect((await client.kudos.list()).total).toBe(1);
+    expect(await client.doctor()).toMatchObject({ healthy: true });
     await client.close();
   });
 
@@ -237,6 +288,80 @@ describe('SQLite storage and projections', () => {
     expect(readdirSync(join(client.home, 'codex', 'inbox'))).toHaveLength(100);
     await client.close();
   }, 15_000);
+
+  it('keeps discovery responses bounded with five thousand kudos', async () => {
+    const client = await testClient(
+      tempHome(),
+      { kind: 'human', id: 'scale-test' },
+      {
+        config: { projection: { writeWinsMarkdown: false, writeInboxEntries: false } },
+      },
+    );
+    await client.agents.create({ id: 'codex', displayName: 'Codex' });
+    client.storage.transaction(() => {
+      for (let index = 0; index < 5_000; index += 1) {
+        client.storage.insertEvent({
+          schemaVersion: 1,
+          id: ulid(1_700_000_000_000 + index),
+          type: 'kudos.given',
+          createdAt: new Date(1_700_000_000_000 + index).toISOString(),
+          actor: { kind: 'human', id: 'scale-test' },
+          recipientAgentId: 'codex',
+          recipientDisplayName: 'Codex',
+          title: `Bounded discovery ${index}`,
+          reason: 'This full detail must not appear in compact list responses.',
+          tags: ['scale'],
+          visibility: 'local',
+        });
+      }
+    });
+
+    const first = await client.kudos.list();
+    expect(first.total).toBe(5_000);
+    expect(first.items).toHaveLength(10);
+    expect(first.hasMore).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(first), 'utf8')).toBeLessThan(26_000);
+    expect(first.items[0]).not.toHaveProperty('reason');
+    const second = await client.kudos.list({ cursor: first.nextCursor! });
+    expect(second.items).toHaveLength(10);
+    expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
+    await client.close();
+  });
+
+  it('shortens unusually wide summary pages at the byte budget', async () => {
+    const client = await testClient(tempHome(), {
+      kind: 'human',
+      id: 'wide-test',
+      displayName: 'W'.repeat(200),
+    });
+    await client.agents.create({ id: 'codex', displayName: 'C'.repeat(200) });
+    const tags = Array.from({ length: 20 }, (_, index) => `tag-${index}-${'x'.repeat(50)}`);
+    client.storage.transaction(() => {
+      for (let index = 0; index < 50; index += 1) {
+        client.storage.insertEvent({
+          schemaVersion: 1,
+          id: ulid(1_800_000_000_000 + index),
+          type: 'kudos.given',
+          createdAt: new Date(1_800_000_000_000 + index).toISOString(),
+          actor: client.actor,
+          recipientAgentId: 'codex',
+          recipientDisplayName: 'C'.repeat(200),
+          title: `Wide ${index} ${'T'.repeat(180)}`,
+          reason: 'The summary excludes this detail.',
+          tags,
+          visibility: 'local',
+        });
+      }
+    });
+
+    const page = await client.kudos.list({ limit: 50 });
+    expect(page.contextLimited).toBe(true);
+    expect(page.hasMore).toBe(true);
+    expect(page.items.length).toBeLessThan(50);
+    expect(Buffer.byteLength(JSON.stringify(page), 'utf8')).toBeLessThan(26_000);
+    expect(page.nextCursor).toBeDefined();
+    await client.close();
+  });
 
   it('handles concurrent writers without lost or duplicate events', async () => {
     const home = tempHome();
@@ -282,9 +407,9 @@ describe('SQLite storage and projections', () => {
     );
     expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }, { ok: true }]);
     const inspect = await testClient(home, { kind: 'system', id: 'inspect' });
-    const page = await inspect.kudos.list({ limit: 200 });
+    const page = await inspect.kudos.list({ limit: 50 });
     expect(page.total).toBe(32);
-    expect(new Set(page.items.map((item) => item.event.id)).size).toBe(32);
+    expect(new Set(page.items.map((item) => item.id)).size).toBe(32);
     await inspect.close();
   });
 

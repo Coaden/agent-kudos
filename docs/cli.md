@@ -65,14 +65,18 @@ Idempotency keys are unique within `(actor kind, actor ID)`. Repeating the same 
 
 ```bash
 kudos inbox codex
-kudos list --recipient codex --status unacknowledged --tag review
+kudos list --recipient codex --status unacknowledged --tag review --limit 10
+kudos list --cursor <next-cursor>
+kudos changes --after <watermark>
 kudos show <kudos-id>
 kudos wins codex
 kudos wins codex --print
 kudos wins codex --open     # explicit GUI action
 ```
 
-List filters include recipient, actor, actor kind, tag, acknowledgment status, visibility, revoked state, ISO date range, limit, and offset.
+`list` and `inbox` return 10 compact rows by default and at most 50. The JSON response includes `nextCursor`, `hasMore`, `watermark`, and `contextLimited`. Prefer opaque cursor pagination; offset remains available for compatibility but cannot be combined with a nonzero offset. Compact rows omit reasons and evidence—use `show` for one full record.
+
+`changes` returns at most 20 compact event changes by default (maximum 100). Save `nextCursor` and pass it as the next `--after` value. An empty page advances its cursor to the current watermark, so polling does not repeatedly scan irrelevant history.
 
 ## Acknowledge and revoke
 
@@ -99,6 +103,8 @@ kudos rebuild
 ```
 
 `doctor` checks SQLite integrity and journal mode, event validation, schema compatibility, projection state, and unsafe agent-directory symlinks. Unsupported or malformed events are reported with their storage row IDs. An unhealthy result uses exit code 5 and does not contaminate later in-process CLI invocations.
+
+`rebuild` regenerates both the SQLite current-state query index and filesystem projections from canonical append-only events.
 
 ## Export and backup
 

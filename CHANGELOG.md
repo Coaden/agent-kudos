@@ -14,12 +14,14 @@ All notable changes will be documented here. The format follows [Keep a Changelo
 - JSON, JSONL, and Markdown exports plus transactionally consistent backups.
 - Agent skill, documentation site, CI, release, security, and contribution infrastructure.
 - Safe restore documentation, cross-platform CI, scale tests, and recovery-aware raw exports.
+- Context-bounded summary and change feeds with opaque SQLite sequence watermarks.
 
 ### Changed
 
 - Normal mutations now synchronize only the affected agent’s projections and avoid durability barriers for rebuildable files.
 - System actors no longer receive implicit self-award, acknowledgment, or administrative revocation authority.
 - Kudos titles are single-line and MCP tag declarations now match runtime validation.
+- List and inbox reads now default to 10 compact summaries (maximum 50); full detail requires an explicit one-record get.
 
 ### Fixed
 

@@ -90,6 +90,14 @@ await client.close();
 
 The library performs no filesystem work at import time and never terminates the host process.
 
+### Context-safe reads
+
+Discovery is intentionally bounded for agent contexts. `client.kudos.list()` and the MCP `kudos_list` tool return the 10 newest compact summaries by default (maximum 50), never full reasons, evidence, notes, or metadata. Follow `nextCursor` for another page, then call `kudos.get(id)` / `kudos_get` for the one full record you actually need.
+
+For polling, `client.kudos.changes({ after: watermark })` and `kudos_changes` return compact changes after an opaque, monotonic watermark (20 by default, maximum 100). Persist the response's `nextCursor`; when a page is empty it advances to the current `watermark`. Responses are additionally capped to roughly 24 KiB of item data.
+
+`WINS.md` remains a readable, rebuildable human view. Agent APIs query SQLite's indexed current-state table; they do not read or tail Markdown.
+
 ## Connect your agents with MCP
 
 Every runtime launches the same local server with a different fixed identity. All of them share the same database.
@@ -159,7 +167,7 @@ Override the root with `AGENT_KUDOS_HOME`, the CLI `--home` option, or the libra
 
 ```text
 kudos init                     kudos agent create|list|show|update
-kudos give                     kudos inbox|list|show|wins
+kudos give                     kudos inbox|list|changes|show|wins
 kudos acknowledge|revoke       kudos stats|doctor|rebuild
 kudos export|backup             kudos mcp
 ```

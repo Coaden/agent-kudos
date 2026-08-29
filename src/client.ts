@@ -9,6 +9,7 @@ import {
   actorSchema,
   agentIdSchema,
   createAgentSchema,
+  changesInputSchema,
   giveKudosSchema,
   listInputSchema,
   updateAgentSchema,
@@ -22,6 +23,7 @@ import type {
   DoctorResult,
   GiveKudosInput,
   GiveKudosResult,
+  KudosChangesInput,
   KudosAcknowledgedEvent,
   KudosClientOptions,
   KudosEvent,
@@ -30,6 +32,8 @@ import type {
   KudosRecord,
   KudosRevokedEvent,
   KudosStats,
+  KudosSummary,
+  ChangePage,
   Page,
   UpdateAgentInput,
 } from './types.js';
@@ -54,6 +58,7 @@ export class KudosClient {
   readonly kudos = {
     give: (input: GiveKudosInput) => this.giveKudos(input),
     list: (input: KudosListInput = {}) => this.listKudos(input),
+    changes: (input: KudosChangesInput = {}) => this.listKudosChanges(input),
     get: (id: string) => this.getKudos(id),
     acknowledge: (input: { kudosId: string; note?: string }) => this.acknowledgeKudos(input),
     revoke: (input: { kudosId: string; reason: string; administrative?: boolean }) =>
@@ -262,9 +267,7 @@ export class KudosClient {
   }
 
   private getKudosRecord(id: string): KudosRecord {
-    const record = recordsFromEvents(this.storage.getReadableEvents()).find(
-      (item) => item.event.id === id,
-    );
+    const record = recordsFromEvents(this.storage.getReadableKudosEvents(id))[0];
     if (!record) throw new KudosError('KUDOS_NOT_FOUND', `Unknown kudos: ${id}`);
     return record;
   }
@@ -274,34 +277,28 @@ export class KudosClient {
     return this.getKudosRecord(id);
   }
 
-  private async listKudos(input: KudosListInput): Promise<Page<KudosRecord>> {
+  private async listKudos(input: KudosListInput): Promise<Page<KudosSummary>> {
     this.checkAbort();
     const filters = this.validate(() => listInputSchema.parse(input));
     const recipient = filters.recipientAgentId
       ? this.storage.getAgent(filters.recipientAgentId)
       : undefined;
-    let records = recordsFromEvents(this.storage.getReadableEvents());
-    records = records.filter((record) => {
-      const event = record.event;
-      return (
-        (!filters.recipientAgentId || event.recipientAgentId === recipient?.id) &&
-        (!filters.actorId || event.actor.id === filters.actorId) &&
-        (!filters.actorKind || event.actor.kind === filters.actorKind) &&
-        (!filters.tag || event.tags?.includes(filters.tag)) &&
-        (!filters.status || record.status === filters.status) &&
-        (!filters.visibility || event.visibility === filters.visibility) &&
-        (filters.revoked === undefined ||
-          (record.revocationStatus === 'revoked') === filters.revoked) &&
-        (!filters.from || event.createdAt >= filters.from) &&
-        (!filters.to || event.createdAt <= filters.to)
-      );
-    });
-    return {
-      items: records.slice(filters.offset, filters.offset + filters.limit),
-      total: records.length,
-      limit: filters.limit,
-      offset: filters.offset,
-    };
+    if (filters.recipientAgentId && !recipient) {
+      throw new KudosError('AGENT_NOT_FOUND', `Unknown agent: ${filters.recipientAgentId}`);
+    }
+    return this.storage.listKudosSummaries(
+      {
+        ...filters,
+        ...(recipient ? { recipientAgentId: recipient.id } : {}),
+      },
+      this.actor,
+    );
+  }
+
+  private async listKudosChanges(input: KudosChangesInput): Promise<ChangePage> {
+    this.checkAbort();
+    const parsed = this.validate(() => changesInputSchema.parse(input));
+    return this.storage.listKudosChanges(parsed.after, parsed.limit, this.actor);
   }
 
   private async acknowledgeKudos(input: { kudosId: string; note?: string }): Promise<KudosRecord> {
@@ -382,36 +379,55 @@ export class KudosClient {
 
   async stats(input: KudosListInput = {}): Promise<KudosStats> {
     this.checkAbort();
-    const records: KudosRecord[] = [];
-    let offset = 0;
-    let total = 0;
-    do {
-      const page = await this.listKudos({ ...input, limit: 200, offset });
-      records.push(...page.items);
-      total = page.total;
-      if (page.items.length === 0) break;
-      offset += page.items.length;
-    } while (offset < total);
-    let includedRecords = records;
-    if (!this.storage.config.includePrivateInStats) {
-      includedRecords = records.filter((record) => record.event.visibility !== 'private');
+    const parsed = this.validate(() => listInputSchema.parse(input));
+    const { cursor: _cursor, limit: _limit, offset: _offset, ...filters } = parsed;
+    void _cursor;
+    void _limit;
+    void _offset;
+    const recipient = filters.recipientAgentId
+      ? this.storage.getAgent(filters.recipientAgentId)
+      : undefined;
+    if (filters.recipientAgentId && !recipient) {
+      throw new KudosError('AGENT_NOT_FOUND', `Unknown agent: ${filters.recipientAgentId}`);
     }
+    const records: KudosSummary[] = [];
+    let cursor: string | undefined;
+    const viewer: ActorIdentity = { kind: 'human', id: 'local-stats' };
+    let hasMore = true;
+    while (hasMore) {
+      const page = this.storage.listKudosSummaries(
+        {
+          ...filters,
+          ...(recipient ? { recipientAgentId: recipient.id } : {}),
+          limit: 50,
+          offset: 0,
+          ...(cursor ? { cursor } : {}),
+        },
+        viewer,
+      );
+      records.push(...page.items);
+      cursor = page.nextCursor;
+      hasMore = page.hasMore && Boolean(cursor) && page.items.length > 0;
+    }
+    const includedRecords = this.storage.config.includePrivateInStats
+      ? records
+      : records.filter((record) => record.visibility !== 'private');
     const stats: KudosStats = {
       total: includedRecords.length,
-      active: includedRecords.filter((record) => !record.revocation).length,
-      acknowledged: includedRecords.filter((record) => record.acknowledgment && !record.revocation)
-        .length,
-      revoked: includedRecords.filter((record) => record.revocation).length,
+      active: includedRecords.filter((record) => record.revocationStatus === 'active').length,
+      acknowledged: includedRecords.filter(
+        (record) => record.status === 'acknowledged' && record.revocationStatus === 'active',
+      ).length,
+      revoked: includedRecords.filter((record) => record.revocationStatus === 'revoked').length,
       byAgent: {},
       byActor: {},
       byTag: {},
     };
     for (const record of includedRecords) {
-      stats.byAgent[record.event.recipientAgentId] =
-        (stats.byAgent[record.event.recipientAgentId] ?? 0) + 1;
-      const actor = `${record.event.actor.kind}:${record.event.actor.id}`;
+      stats.byAgent[record.recipientAgentId] = (stats.byAgent[record.recipientAgentId] ?? 0) + 1;
+      const actor = `${record.actor.kind}:${record.actor.id}`;
       stats.byActor[actor] = (stats.byActor[actor] ?? 0) + 1;
-      for (const tag of record.event.tags ?? []) stats.byTag[tag] = (stats.byTag[tag] ?? 0) + 1;
+      for (const tag of record.tags) stats.byTag[tag] = (stats.byTag[tag] ?? 0) + 1;
     }
     return stats;
   }
@@ -471,6 +487,15 @@ export class KudosClient {
           message: `${eventScan.events.length} canonical event${eventScan.events.length === 1 ? '' : 's'} validated.`,
         });
       }
+      const indexCounts = this.storage.currentIndexCounts();
+      diagnostics.push({
+        level: indexCounts.given === indexCounts.indexed ? 'ok' : 'error',
+        code:
+          indexCounts.given === indexCounts.indexed
+            ? 'CURRENT_INDEX_VALID'
+            : 'CURRENT_INDEX_INCONSISTENT',
+        message: `${indexCounts.indexed} of ${indexCounts.given} kudos are present in the current-state index.`,
+      });
       const expected = this.projections.expectedPaths();
       const manifest = this.storage.projectionManifest().sort();
       const stale = JSON.stringify(expected) === JSON.stringify(manifest) ? [] : expected;
