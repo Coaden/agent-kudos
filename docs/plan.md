@@ -49,14 +49,14 @@ Use:
 - ESLint and Prettier
 - Strict TypeScript settings
 
-Prefer a single npm package named `agent-kudos` if that name is available. It should provide:
+Use the single public npm package [`agent-kudos`](https://www.npmjs.com/package/agent-kudos). It provides:
 
 - Library exports from `agent-kudos`
 - MCP exports from `agent-kudos/mcp`
 - A CLI binary named `kudos`
 - An MCP server binary named `agent-kudos-mcp`
 
-If the package name is unavailable or conflicts with an existing project, keep the package name configurable and clearly document the naming decision. Do not claim or publish any package automatically.
+The name is owned by this project under the `coaden` npm account. Publishing remains an explicit maintainer-authorized release operation.
 
 Use Node's built-in `node:sqlite` module rather than a native npm dependency. Node 22.13 is the minimum because `node:sqlite` is available without an experimental command-line flag there. This avoids native compilation and platform-specific binary installation failures, keeping `npm install` as portable as practical.
 

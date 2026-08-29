@@ -4,6 +4,8 @@ All notable changes will be documented here. The format follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-29
+
 ### Added
 
 - Append-only SQLite event storage with WAL concurrency and actor-scoped idempotency.
@@ -31,4 +33,5 @@ All notable changes will be documented here. The format follows [Keep a Changelo
 - CLI exit codes no longer leak between embedded invocations, and missing wins projections produce actionable errors.
 - Doctor now detects current-state acknowledgment or revocation drift, migration metadata problems, and alias-to-identity conflicts; statistics preserve actor visibility when private inclusion is enabled; read-only V1 schema errors provide migration guidance.
 
-[Unreleased]: https://github.com/Coaden/agent-kudos/commits/main
+[Unreleased]: https://github.com/Coaden/agent-kudos/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Coaden/agent-kudos/tree/v0.1.0

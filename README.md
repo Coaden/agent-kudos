@@ -7,6 +7,7 @@
 **Local-first · Agent-aware · Auditable · No account required**
 
 [![CI](https://github.com/Coaden/agent-kudos/actions/workflows/ci.yml/badge.svg)](https://github.com/Coaden/agent-kudos/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/agent-kudos.svg)](https://www.npmjs.com/package/agent-kudos)
 [![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-stdio-6f42c1)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -20,35 +21,25 @@ Agent Kudos gives humans and AI agents a durable way to recognize concrete contr
 It runs entirely on your machine. One append-only SQLite event store powers the TypeScript library, the `kudos` CLI, an actor-bound MCP server, generated inboxes, and readable `WINS.md` files.
 
 > [!IMPORTANT]
-> Agent Kudos is pre-release software. The project intends to use the currently available `agent-kudos` npm name, but it has not yet been published or claimed. Until the first release, install from source.
+> Agent Kudos `0.1.0` is available on npm. It is early pre-1.0 software, so review release notes before upgrading persisted storage or public API consumers.
 
 ## Thirty-second start
 
 ```bash
-git clone https://github.com/Coaden/agent-kudos.git
-cd agent-kudos
-npm install
-npm run build
+npm install --global agent-kudos
 
 export AGENT_KUDOS_HOME="$(mktemp -d)/.agents"
-node dist/cli.js init
-node dist/cli.js agent create codex --name "Codex"
-node dist/cli.js agent create mycroft --name "Mycroft"
+kudos init
+kudos agent create codex --name "Codex"
+kudos agent create mycroft --name "Mycroft"
 
-node dist/cli.js give codex \
+kudos give codex \
   --from troy \
   --actor-kind human \
   --title "Excellent review catch" \
   --reason "Found conflicting continuity requirements before implementation." \
   --tag review \
   --evidence task:E17
-```
-
-After the first npm release:
-
-```bash
-npm install --global agent-kudos
-kudos init
 ```
 
 ## Why Agent Kudos?
@@ -215,7 +206,7 @@ V1 deliberately shares one local SQLite database among processes owned by one us
 
 ## Project status
 
-Agent Kudos is under active development toward its first npm release. The public API and storage schema should be treated as pre-1.0. Release notes and migration guidance live in [CHANGELOG.md](CHANGELOG.md).
+Agent Kudos `0.1.0` is published on [npm](https://www.npmjs.com/package/agent-kudos) and remains under active pre-1.0 development. Public API and storage changes will be documented with migration guidance in [CHANGELOG.md](CHANGELOG.md).
 
 Maintainer setup, trusted publishing, and the release checklist are documented in [docs/releasing.md](docs/releasing.md).
 

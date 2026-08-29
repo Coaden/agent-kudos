@@ -9,17 +9,16 @@ Publishing is intentionally separate from ordinary CI and requires maintainer au
 
 ## One-time setup
 
-1. Confirm the public npm package name `agent-kudos` remains available.
-2. Create or sign in to the intended npm organization/account and enable two-factor authentication.
-3. If npm requires the package to exist before trusted-publisher configuration, make the first release through npm staged publishing and approve it interactively with 2FA. Do not add a long-lived token to GitHub.
-4. On npmjs.com, configure a trusted publisher for:
+1. Confirm access to the published [`agent-kudos` npm package](https://www.npmjs.com/package/agent-kudos) under the `coaden` account.
+2. Keep two-factor authentication enabled. The `0.1.0` bootstrap release was approved interactively; do not add a long-lived token to GitHub.
+3. On npmjs.com, configure a trusted publisher for:
    - GitHub owner: `Coaden`
    - Repository: `agent-kudos`
    - Workflow filename: `release.yml`
    - Environment: `npm` if environment protection is enabled
    - Allowed action: `npm publish`
-5. In GitHub, create an `npm` environment and preferably require maintainer approval.
-6. Enable GitHub Pages with **GitHub Actions** as the source.
+4. In GitHub, create an `npm` environment and preferably require maintainer approval.
+5. Enable GitHub Pages with **GitHub Actions** as the source.
 
 The release workflow uses OIDC trusted publishing, requires no long-lived npm token, and receives only `contents: read` and `id-token: write` permissions. npm trusted publishing generates provenance automatically for this public repository/package combination.
 
