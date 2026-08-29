@@ -4,6 +4,13 @@ All notable changes will be documented here. The format follows [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-29
+
+### Added
+
+- Explicit, dry-run-first `kudos skill install`, `status`, and `uninstall` commands for verified Codex and Claude Code layouts, including owned-copy version checks, opt-in links, conflict protection, and actor-bound MCP command generation.
+- A runtime-aware README prompt that users can paste into an agent to install, configure, verify, and summarize an Agent Kudos integration without guessing unsupported harness conventions.
+
 ## [0.1.0] - 2026-08-29
 
 ### Added
@@ -33,5 +40,6 @@ All notable changes will be documented here. The format follows [Keep a Changelo
 - CLI exit codes no longer leak between embedded invocations, and missing wins projections produce actionable errors.
 - Doctor now detects current-state acknowledgment or revocation drift, migration metadata problems, and alias-to-identity conflicts; statistics preserve actor visibility when private inclusion is enabled; read-only V1 schema errors provide migration guidance.
 
-[Unreleased]: https://github.com/Coaden/agent-kudos/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Coaden/agent-kudos/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Coaden/agent-kudos/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Coaden/agent-kudos/tree/v0.1.0

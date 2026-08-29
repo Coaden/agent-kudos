@@ -18,14 +18,29 @@ Copy or link the skill into the runtime-specific repository skill directory. Thi
 
 ## User installation
 
-After installing the npm package, locate its `skills/agent-kudos` directory and copy or link it into the skill directory supported by your runtime. Common layouts are:
+The CLI verifies and manages the known Codex and Claude Code user layouts:
 
-```text
-~/.codex/skills/agent-kudos/
-~/.claude/skills/agent-kudos/
+```bash
+kudos skill install                                      # dry-run both detected runtimes
+kudos skill install --runtime codex --yes                # install one copied skill
+kudos skill install --runtime claude --link --yes         # explicit package-linked install
+kudos skill status
+kudos skill uninstall --runtime claude                    # dry-run removal
+kudos skill uninstall --runtime claude --yes
 ```
 
-Global skill installation changes agent configuration and should always be an explicit user action. Agent Kudos has no postinstall script and never modifies those directories automatically.
+Bare `install` and `uninstall` commands are dry runs. The installer applies only with `--yes`, only when the runtime home already exists, and only to its `skills/agent-kudos` child. Copies carry an ownership/version stamp so `status` can report stale installations after npm updates. Existing unowned directories are conflicts and require explicit `--force`; unrelated sibling skills are never touched.
+
+Copy mode is the stable default. `--link` points at the skill inside the installed npm package, which updates with an in-place global package upgrade but may break if that package moves. Run `status` after package updates either way.
+
+Add identity options to print a ready-to-run actor-bound MCP command without editing runtime configuration:
+
+```bash
+kudos skill install --runtime codex --actor-id codex --actor-name "Codex"
+kudos skill install --runtime claude --actor-id claude --actor-name "Claude"
+```
+
+Global skill installation changes agent configuration and is always an explicit user action. Agent Kudos has no postinstall script and never modifies those directories implicitly.
 
 ## MCP and skill roles
 
@@ -40,4 +55,4 @@ When MCP is unavailable, the skill permits using the local `kudos` CLI if comman
 
 ## Claude and other adapters
 
-The core `SKILL.md` format is intentionally portable. Thin runtime-specific placement is documented here rather than duplicating the instructions across formats. No speculative plugin manifest is shipped.
+The Codex and Claude Code layouts and CLI registration forms have been verified locally. The core `SKILL.md` format remains portable, but Cursor, Gemini, Hermes, OpenClaw, OpenCode, and other conventions are not guessed. For those runtimes, inspect authoritative documentation or a real local installation before copying the packaged skill or configuring the stdio MCP server.

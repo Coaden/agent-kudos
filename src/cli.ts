@@ -8,6 +8,13 @@ import { KudosClient } from './client.js';
 import { asKudosError, KudosError, type KudosErrorCode } from './errors.js';
 import { atomicWriteFile } from './fs-utils.js';
 import { startMcpServer } from './mcp/index.js';
+import {
+  formatSkillResult,
+  installSkill,
+  skillStatus,
+  uninstallSkill,
+  type SkillRuntime,
+} from './skill-install.js';
 import type {
   ActorIdentity,
   EvidenceReference,
@@ -31,6 +38,17 @@ const cliExitCodes = new WeakMap<Command, number>();
 
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function skillRuntimes(values: string[]): SkillRuntime[] | undefined {
+  const invalid = values.find(
+    (value) => value !== 'codex' && value !== 'claude' && value !== 'all',
+  );
+  if (invalid) {
+    throw new KudosError('INVALID_INPUT', `Unsupported skill runtime: ${invalid}.`);
+  }
+  if (!values.length || values.includes('all')) return undefined;
+  return values as SkillRuntime[];
 }
 
 function parseEvidence(value: string): EvidenceReference {
@@ -209,6 +227,78 @@ export function createCli(io: CliIo = defaultIo): Command {
         output(io, global.json, profile, `Created ${profile.displayName} (${profile.id})`);
       },
     );
+
+  const skillCommand = program
+    .command('skill')
+    .description('Install and maintain the packaged agent skill');
+
+  skillCommand
+    .command('install')
+    .description('Plan or install the skill for detected agent runtimes')
+    .option('--runtime <runtime>', 'codex, claude, or all (repeatable)', collect, [])
+    .option('--yes', 'apply the displayed plan', false)
+    .option('--force', 'replace a conflicting agent-kudos directory', false)
+    .option('--link', 'symlink to the packaged skill instead of copying it', false)
+    .option('--actor-id <id>', 'print actor-bound MCP registration commands')
+    .option('--actor-name <name>', 'display name used in MCP registration commands')
+    .action(
+      (
+        options: {
+          runtime: string[];
+          yes: boolean;
+          force: boolean;
+          link: boolean;
+          actorId?: string;
+          actorName?: string;
+        },
+        command: Command,
+      ) => {
+        const global = globals(command);
+        const result = installSkill({
+          runtimes: skillRuntimes(options.runtime),
+          apply: options.yes,
+          force: options.force,
+          link: options.link,
+          actorId: options.actorId,
+          actorName: options.actorName,
+        });
+        output(io, global.json, result, formatSkillResult(result, 'install'));
+      },
+    );
+
+  skillCommand
+    .command('status')
+    .description('Show installed, stale, missing, or conflicting skill copies')
+    .option('--runtime <runtime>', 'codex, claude, or all (repeatable)', collect, [])
+    .option('--actor-id <id>', 'print actor-bound MCP registration commands')
+    .option('--actor-name <name>', 'display name used in MCP registration commands')
+    .action(
+      (options: { runtime: string[]; actorId?: string; actorName?: string }, command: Command) => {
+        const global = globals(command);
+        const result = skillStatus({
+          runtimes: skillRuntimes(options.runtime),
+          actorId: options.actorId,
+          actorName: options.actorName,
+        });
+        output(io, global.json, result, formatSkillResult(result, 'status'));
+      },
+    );
+
+  skillCommand
+    .command('uninstall')
+    .description('Plan or remove Agent Kudos-owned skill installations')
+    .option('--runtime <runtime>', 'codex, claude, or all (repeatable)', collect, [])
+    .option('--yes', 'apply the displayed plan', false)
+    .option('--force', 'remove a conflicting agent-kudos directory', false)
+    .action((options: { runtime: string[]; yes: boolean; force: boolean }, command: Command) => {
+      const global = globals(command);
+      const result = uninstallSkill({
+        runtimes: skillRuntimes(options.runtime),
+        apply: options.yes,
+        force: options.force,
+      });
+      output(io, global.json, result, formatSkillResult(result, 'uninstall'));
+    });
 
   agentCommand
     .command('list')

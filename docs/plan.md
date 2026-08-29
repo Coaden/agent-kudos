@@ -908,7 +908,7 @@ Include:
 - No hosted backend
 - No network transport in V1
 - No postinstall scripts
-- No writes outside the configured home
+- No data or projection writes outside the configured home; an explicit, confirmed skill-management command may write only its owned directory within a verified agent runtime home
 - A `.gitignore` that prevents accidental inclusion of real kudos data
 - A contribution workflow suitable for a public GitHub project
 

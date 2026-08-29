@@ -21,7 +21,7 @@ Agent Kudos gives humans and AI agents a durable way to recognize concrete contr
 It runs entirely on your machine. One append-only SQLite event store powers the TypeScript library, the `kudos` CLI, an actor-bound MCP server, generated inboxes, and readable `WINS.md` files.
 
 > [!IMPORTANT]
-> Agent Kudos `0.1.0` is available on npm. It is early pre-1.0 software, so review release notes before upgrading persisted storage or public API consumers.
+> Agent Kudos is available on npm. It is early pre-1.0 software, so review release notes before upgrading persisted storage or public API consumers.
 
 ## Thirty-second start
 
@@ -40,6 +40,25 @@ kudos give codex \
   --reason "Found conflicting continuity requirements before implementation." \
   --tag review \
   --evidence task:E17
+```
+
+## Let your agent set it up
+
+Paste the prompt below into Codex, Claude Code, Hermes, OpenClaw, OpenCode, Cursor, or another local agent harness. It uses verified automation for Codex and Claude Code and requires other harnesses to inspect their actual conventions instead of guessing.
+
+```text
+Set up Agent Kudos for this agent and runtime. Agent Kudos is a local-first recognition system for stable AI-agent identities. It uses an append-only SQLite database under ~/.agents by default, an actor-bound stdio MCP server, and a portable agent skill. Multiple local agents share the database, but each MCP server must be bound to its own stable identity.
+
+Work autonomously through the safe, reversible steps below. Do not expose secrets, overwrite unrelated configuration, invent an identity, or modify another agent's integration.
+
+1. Verify Node.js 22.13+ and npm are available. Install or update the public `agent-kudos` npm package globally with `npm install --global agent-kudos` if needed.
+2. Preserve an existing `AGENT_KUDOS_HOME`; otherwise use the default ~/.agents. Run `kudos init`, then `kudos doctor`.
+3. Run `kudos agent list`. Determine this agent's existing stable ID from the current harness or Agent Kudos configuration. Reuse it if it exists. If no identity is clearly established, ask me for the agent ID and display name before running `kudos agent create <id> --name <name>`. Never silently merge or rename identities.
+4. Detect the current harness from real local evidence and its CLI help or configuration. For Codex or Claude Code, preview the packaged skill installation with `kudos skill install --runtime <codex|claude> --actor-id <agent-id> --actor-name <display-name>`. Review the exact destination, then apply it with the same command plus `--yes`. Do not use `--force` unless I explicitly approve replacing a reported conflict.
+5. Run the actor-bound MCP registration command printed by the installer. If an `agent-kudos` MCP entry already exists, inspect it and update only when its actor or executable is wrong; do not create duplicates.
+6. For another harness, verify its real stdio MCP and skill conventions from installed help or authoritative documentation. Configure command `agent-kudos-mcp` with `AGENT_KUDOS_ACTOR_ID=<agent-id>`, `AGENT_KUDOS_ACTOR_KIND=agent`, and `AGENT_KUDOS_ACTOR_NAME=<display-name>`. Locate the packaged `skills/agent-kudos` directory and copy it only into that harness's confirmed skill directory. Do not guess paths or overwrite an existing skill; stop and explain if the conventions cannot be verified.
+7. Verify with `kudos skill status` where supported, the harness's MCP-list command, and `kudos doctor`. Tell me whether a new agent session is required before the tools or skill appear.
+8. Report the package version, stable actor ID, storage home, installed skill path, MCP registration status, verification results, and every file or configuration changed. Do not print private kudos content or environment values beyond the non-secret actor identity and home path.
 ```
 
 ## Why Agent Kudos?
@@ -131,7 +150,15 @@ The server exposes purpose-built tools, resources, and prompts—never a generic
 
 ## Install the agent skill
 
-The npm package includes [`skills/agent-kudos`](skills/agent-kudos). Install or link that directory into your agent runtime’s supported skill directory, then register the MCP server. The skill teaches agents when recognition is warranted, when it is not, and how to retry safely without inventing accomplishments.
+The npm package includes [`skills/agent-kudos`](skills/agent-kudos). Agent Kudos can safely place it into verified Codex and Claude Code user layouts:
+
+```bash
+kudos skill install --runtime codex --actor-id codex --actor-name "Codex"       # dry run
+kudos skill install --runtime codex --actor-id codex --actor-name "Codex" --yes
+kudos skill status
+```
+
+The installer copies by default, never creates a missing runtime home, refuses conflicts, and changes nothing without `--yes`. Use `--link` only when you intentionally want a package-linked installation. Other runtimes should first verify their own skill convention and then place the same portable directory there.
 
 See [Skill installation](docs/skill.md) for Codex, Claude Code, and repository-local layouts.
 
@@ -161,6 +188,7 @@ kudos init                     kudos agent create|list|show|update
 kudos give                     kudos inbox|list|changes|show|wins
 kudos acknowledge|revoke       kudos stats|doctor|rebuild
 kudos export|backup             kudos mcp
+kudos skill install|status|uninstall
 ```
 
 Every command supports `--help`; query commands and mutations support `--json` for automation. Read the complete [CLI reference](docs/cli.md).
@@ -206,7 +234,7 @@ V1 deliberately shares one local SQLite database among processes owned by one us
 
 ## Project status
 
-Agent Kudos `0.1.0` is published on [npm](https://www.npmjs.com/package/agent-kudos) and remains under active pre-1.0 development. Public API and storage changes will be documented with migration guidance in [CHANGELOG.md](CHANGELOG.md).
+Agent Kudos is published on [npm](https://www.npmjs.com/package/agent-kudos) and remains under active pre-1.0 development. Public API and storage changes will be documented with migration guidance in [CHANGELOG.md](CHANGELOG.md).
 
 Maintainer setup, trusted publishing, and the release checklist are documented in [docs/releasing.md](docs/releasing.md).
 

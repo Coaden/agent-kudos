@@ -49,3 +49,7 @@ V1 uses stdio only and opens no network listener. MCP tools never accept arbitra
 ## Nonrepudiation
 
 Append-only application behavior makes ordinary history changes explicit, but an unsigned database controlled by its owner can be rewritten. Agent Kudos does not currently implement content hashes or signatures and must not be described as cryptographically tamper-proof or legally nonrepudiable.
+
+## Agent skill installer
+
+No package installation hook changes agent configuration. `kudos skill install` and `kudos skill uninstall` are explicit commands and dry-run unless `--yes` is supplied. They recognize only verified Codex and Claude Code layouts, skip missing runtime homes, constrain changes to `skills/agent-kudos`, and refuse unowned conflicts without `--force`. Copy installations carry an ownership/version stamp; symlinks are opt-in. The installer prints MCP registration commands but does not execute them or edit runtime MCP configuration.

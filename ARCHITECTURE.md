@@ -52,7 +52,12 @@ Projection timestamps use the newest canonical event timestamp, so repeated rebu
 - `src/projections.ts`: safe deterministic filesystem views.
 - `src/cli.ts`: parsing, human/JSON output, stable exit codes.
 - `src/mcp/index.ts`: actor binding, MCP tools/resources/prompts, visibility policy.
+- `src/skill-install.ts`: explicit, runtime-scoped skill placement and ownership checks.
 - `skills/agent-kudos`: agent decision guidance distributed with the package.
+
+## Skill installation boundary
+
+Skill-aware runtimes load the same portable directory. The CLI recognizes only verified Codex and Claude Code user layouts. Installation and removal are dry-run by default, require `--yes` to mutate, never create a missing runtime home, and operate only on the runtime's `skills/agent-kudos` child. Copied installations contain a package/version ownership stamp; symlinks are opt-in and recognized only when they resolve to the packaged source. MCP configuration remains under each runtime's first-party CLI, with Agent Kudos printing but not executing the actor-bound registration command.
 
 ## Versioning
 

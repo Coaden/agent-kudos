@@ -20,6 +20,18 @@ describe('CLI', () => {
     expect(await runCli(['node', 'kudos', '--help'], captured.io)).toBe(0);
     expect(captured.stdout.join('')).toContain('Local-first recognition');
     expect(captured.stdout.join('')).toContain('give');
+    expect(captured.stdout.join('')).toContain('skill');
+  });
+
+  it('rejects unsupported skill runtimes', async () => {
+    const captured = capture();
+    expect(
+      await runCli(
+        ['node', 'kudos', 'skill', 'install', '--runtime', 'unverified-runtime'],
+        captured.io,
+      ),
+    ).toBe(2);
+    expect(captured.stderr.join('')).toContain('Unsupported skill runtime');
   });
 
   it('emits human and JSON output and stable exit codes', async () => {

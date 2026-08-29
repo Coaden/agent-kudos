@@ -32,6 +32,8 @@ try {
     'dist/index.js',
     'dist/cli.js',
     'dist/mcp-server.js',
+    'dist/skill-install.js',
+    'skills/agent-kudos/SKILL.md',
   ]) {
     if (!names.includes(required)) throw new Error(`Tarball is missing ${required}.`);
   }
@@ -87,6 +89,35 @@ try {
     ],
     consumer,
   );
+
+  const skillUser = join(temporary, 'skill-user');
+  const codexHome = join(skillUser, '.codex');
+  mkdirSync(codexHome, { recursive: true });
+  const skillEnv = {
+    ...process.env,
+    HOME: skillUser,
+    USERPROFILE: skillUser,
+    CODEX_HOME: codexHome,
+  };
+  run(kudosBin, ['skill', 'install', '--runtime', 'codex'], consumer, skillEnv);
+  const installedSkill = join(codexHome, 'skills', 'agent-kudos', 'SKILL.md');
+  if (existsSync(installedSkill)) throw new Error('Skill dry run unexpectedly wrote files.');
+  run(
+    kudosBin,
+    ['skill', 'install', '--runtime', 'codex', '--actor-id', 'codex', '--yes'],
+    consumer,
+    skillEnv,
+  );
+  if (!existsSync(installedSkill))
+    throw new Error('Installed package could not install its skill.');
+  const installedSkillStatus = JSON.parse(
+    run(kudosBin, ['skill', 'status', '--runtime', 'codex', '--json'], consumer, skillEnv),
+  );
+  if (installedSkillStatus.locations?.[0]?.state !== 'current') {
+    throw new Error('Installed skill did not report current status.');
+  }
+  run(kudosBin, ['skill', 'uninstall', '--runtime', 'codex', '--yes'], consumer, skillEnv);
+  if (existsSync(installedSkill)) throw new Error('Skill uninstall left installed files behind.');
 
   const acceptanceHome = join(temporary, 'acceptance', '.agents');
   const acceptanceEnv = { ...process.env, AGENT_KUDOS_HOME: acceptanceHome };

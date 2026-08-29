@@ -127,6 +127,20 @@ kudos mcp --actor-id codex --actor-kind agent --actor-name "Codex"
 
 This starts stdio protocol traffic on stdout. Use an MCP client configuration rather than launching it manually for ordinary agent use.
 
+## Agent skill installation
+
+```bash
+kudos skill install
+kudos skill install --runtime codex --actor-id codex --actor-name "Codex" --yes
+kudos skill install --runtime claude --link --yes
+kudos skill status
+kudos skill uninstall --runtime claude --yes
+```
+
+`install` and `uninstall` are dry runs unless `--yes` is present. Supported runtime selectors are `codex`, `claude`, and `all`; repeat `--runtime` when needed. Only existing runtime homes are detected. Copy mode records the package version for stale-installation checks; `--link` is opt-in. Unowned destination content is never replaced or removed unless `--force` is explicit.
+
+Supplying `--actor-id` and optional `--actor-name` prints the verified first-party MCP registration command for each selected runtime. It does not edit MCP configuration.
+
 ## Exit codes
 
 | Code | Meaning                                    |
