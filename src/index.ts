@@ -9,6 +9,8 @@ export {
   eventSchema,
   evidenceSchema,
   giveKudosSchema,
+  kudosTagSchema,
+  kudosTitleSchema,
   listInputSchema,
   profileSchema,
   updateAgentSchema,

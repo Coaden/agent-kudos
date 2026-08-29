@@ -25,7 +25,10 @@ try {
   for (const required of [
     'package.json',
     'README.md',
+    'AGENTS.md',
+    'ARCHITECTURE.md',
     'LICENSE',
+    'docs/recovery.md',
     'dist/index.js',
     'dist/cli.js',
     'dist/mcp-server.js',
@@ -56,6 +59,10 @@ try {
   const mcpBin = join(consumer, 'node_modules', '.bin', 'agent-kudos-mcp');
   run(kudosBin, ['--help'], consumer);
   run(mcpBin, ['--help'], consumer);
+  if (run(kudosBin, ['--version'], consumer).trim() !== packageJson.version)
+    throw new Error('CLI version does not match package.json.');
+  if (run(mcpBin, ['--version'], consumer).trim() !== packageJson.version)
+    throw new Error('MCP binary version does not match package.json.');
   run(
     'node',
     [

@@ -1,4 +1,12 @@
-import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
@@ -48,6 +56,33 @@ describe('SQLite storage and projections', () => {
     await client.close();
   });
 
+  it('renders legacy multiline titles once without allowing heading injection', async () => {
+    const home = tempHome();
+    const client = await testClient(home);
+    await client.agents.create({ id: 'codex', displayName: 'Codex' });
+    const id = '01ARZ3NDEKTSV4RRFFQ69G5FAA';
+    client.storage.transaction(() =>
+      client.storage.insertEvent({
+        schemaVersion: 1,
+        id,
+        type: 'kudos.given',
+        createdAt: new Date().toISOString(),
+        actor: { kind: 'human', id: 'troy' },
+        recipientAgentId: 'codex',
+        recipientDisplayName: 'Codex',
+        title: 'First line\n# Injected heading',
+        reason: 'Legacy event created before titles became single-line input.',
+        visibility: 'local',
+      }),
+    );
+    client.projections.rebuild();
+    const inbox = readFileSync(join(home, 'codex', 'inbox', `${id}.md`), 'utf8');
+    expect(inbox.match(/First line/g)).toHaveLength(1);
+    expect(inbox.match(/Injected heading/g)).toHaveLength(1);
+    expect(inbox).toContain('\\# Injected heading');
+    await client.close();
+  });
+
   it('rejects symlink traversal outside the configured home', async () => {
     const home = tempHome();
     const outside = tempHome();
@@ -61,19 +96,45 @@ describe('SQLite storage and projections', () => {
     await client.close();
   });
 
-  it('reports malformed rows and unsupported schema versions', async () => {
+  it('isolates unsupported rows for reads and raw export while failing closed on writes', async () => {
     const home = tempHome();
     const client = await testClient(home);
+    await client.agents.create({ id: 'codex', displayName: 'Codex' });
+    const unsupportedId = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
     client.storage
       .db()
       .prepare(
         `INSERT INTO events(id, schema_version, type, created_at, actor_kind, actor_id, payload)
          VALUES (?, 1, 'unknown', ?, 'system', 'test', ?)`,
       )
-      .run('01ARZ3NDEKTSV4RRFFQ69G5FAV', new Date().toISOString(), '{"schemaVersion":1}');
+      .run(
+        unsupportedId,
+        new Date().toISOString(),
+        JSON.stringify({
+          schemaVersion: 1,
+          id: unsupportedId,
+          type: 'kudos.future',
+          createdAt: new Date().toISOString(),
+          actor: { kind: 'system', id: 'future' },
+        }),
+      );
     const doctor = await client.doctor();
     expect(doctor.healthy).toBe(false);
-    expect(doctor.diagnostics.some((item) => item.code === 'INVALID_EVENT')).toBe(true);
+    expect(
+      doctor.diagnostics.some(
+        (item) => item.code === 'UNSUPPORTED_EVENT' && item.message.includes(unsupportedId),
+      ),
+    ).toBe(true);
+    expect((await client.kudos.list()).total).toBe(0);
+    expect(await client.export('jsonl')).toContain('kudos.future');
+    expect(await client.export('json')).toContain(unsupportedId);
+    await expect(
+      client.kudos.give({
+        recipientAgentId: 'codex',
+        title: 'Unsafe write',
+        reason: 'Must not write across an event stream with unknown semantics.',
+      }),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_EVENT' });
     await client.close();
 
     const otherHome = tempHome();
@@ -104,7 +165,78 @@ describe('SQLite storage and projections', () => {
         .integrity_check,
     ).toBe('ok');
     database.close();
+    if (process.platform !== 'win32') {
+      expect(statSync(backup).mode & 0o777).toBe(0o600);
+    }
   });
+
+  it('keeps live SQLite files private to the filesystem owner', async () => {
+    const home = tempHome();
+    const client = await testClient(home);
+    await client.agents.create({ id: 'codex', displayName: 'Codex' });
+    if (process.platform !== 'win32') {
+      const files = readdirSync(join(home, 'kudos')).filter((name) => name.includes('sqlite3'));
+      expect(files.length).toBeGreaterThan(0);
+      for (const file of files) {
+        expect(statSync(join(home, 'kudos', file)).mode & 0o777).toBe(0o600);
+      }
+    }
+    await client.close();
+  });
+
+  it('rolls back all writes when a transaction fails', async () => {
+    const client = await testClient(tempHome());
+    expect(() =>
+      client.storage.transaction(() => {
+        client.storage.insertAgent({
+          id: 'rollback',
+          displayName: 'Rollback',
+          createdAt: new Date().toISOString(),
+        });
+        throw new Error('force rollback');
+      }),
+    ).toThrow('force rollback');
+    expect(client.storage.getAgent('rollback')).toBeUndefined();
+    await client.close();
+  });
+
+  it('migrates an empty version-zero database transactionally', async () => {
+    const home = tempHome();
+    const kudosDirectory = join(home, 'kudos');
+    mkdirSync(kudosDirectory);
+    const path = join(kudosDirectory, 'agent-kudos.sqlite3');
+    new DatabaseSync(path).close();
+    const client = await testClient(home);
+    expect(
+      (client.storage.db().prepare('PRAGMA user_version').get() as { user_version: number })
+        .user_version,
+    ).toBe(1);
+    expect(
+      (
+        client.storage.db().prepare('SELECT COUNT(*) AS count FROM schema_migrations').get() as {
+          count: number;
+        }
+      ).count,
+    ).toBe(1);
+    await client.close();
+  });
+
+  it('keeps give latency practical with a realistic pending inbox', async () => {
+    const client = await testClient(tempHome());
+    await client.agents.create({ id: 'codex', displayName: 'Codex' });
+    const started = performance.now();
+    for (let index = 0; index < 100; index += 1) {
+      await client.kudos.give({
+        recipientAgentId: 'codex',
+        title: `Scale contribution ${index}`,
+        reason: 'Exercises incremental projection maintenance with pending recognition.',
+      });
+    }
+    const elapsed = performance.now() - started;
+    expect(elapsed).toBeLessThan(10_000);
+    expect(readdirSync(join(client.home, 'codex', 'inbox'))).toHaveLength(100);
+    await client.close();
+  }, 15_000);
 
   it('handles concurrent writers without lost or duplicate events', async () => {
     const home = tempHome();
@@ -154,5 +286,33 @@ describe('SQLite storage and projections', () => {
     expect(page.total).toBe(32);
     expect(new Set(page.items.map((item) => item.event.id)).size).toBe(32);
     await inspect.close();
+  });
+
+  it('waits for a bounded interval and reports a busy database', async () => {
+    const home = tempHome();
+    const setup = await testClient(home);
+    await setup.agents.create({ id: 'codex', displayName: 'Codex' });
+    const databasePath = setup.storage.databasePath;
+    await setup.close();
+
+    const lock = new DatabaseSync(databasePath);
+    lock.exec('PRAGMA journal_mode = WAL; BEGIN IMMEDIATE');
+    const contender = await testClient(home, { kind: 'human', id: 'contender' });
+    try {
+      contender.storage.db().exec('PRAGMA busy_timeout = 50');
+      const started = performance.now();
+      await expect(
+        contender.kudos.give({
+          recipientAgentId: 'codex',
+          title: 'Contended write',
+          reason: 'Verifies bounded SQLite busy handling.',
+        }),
+      ).rejects.toMatchObject({ code: 'DATABASE_BUSY' });
+      expect(performance.now() - started).toBeLessThan(1_000);
+    } finally {
+      await contender.close();
+      lock.exec('ROLLBACK');
+      lock.close();
+    }
   });
 });

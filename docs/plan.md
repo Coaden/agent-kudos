@@ -116,8 +116,7 @@ Use this structure:
 │   ├── config.json
 │   ├── agent-kudos.sqlite3
 │   ├── agent-kudos.sqlite3-wal  # runtime-managed; may exist while open
-│   ├── agent-kudos.sqlite3-shm  # runtime-managed; may exist while open
-│   └── exports/
+│   └── agent-kudos.sqlite3-shm  # runtime-managed; may exist while open
 └── <agent-id>/
     ├── profile.json
     ├── WINS.md

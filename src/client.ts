@@ -112,6 +112,7 @@ export class KudosClient {
 
   private async createAgent(input: CreateAgentInput): Promise<AgentProfile> {
     this.checkAbort();
+    this.storage.assertEventCompatibility();
     const parsed = this.validate(() => createAgentSchema.parse(input));
     if (this.storage.getAgent(parsed.id)) {
       throw new KudosError('AGENT_EXISTS', `Agent or alias already exists: ${parsed.id}`);
@@ -145,12 +146,13 @@ export class KudosClient {
       this.storage.insertAgent(profile);
       this.storage.insertEvent(event);
     });
-    this.projections.rebuild();
+    this.projections.syncAgent(profile.id);
     return profile;
   }
 
   private async updateAgent(idOrAlias: string, changes: UpdateAgentInput): Promise<AgentProfile> {
     this.checkAbort();
+    this.storage.assertEventCompatibility();
     this.validate(() => agentIdSchema.parse(idOrAlias));
     const parsed = this.validate(() => updateAgentSchema.parse(changes));
     const existing = this.storage.getAgent(idOrAlias);
@@ -184,7 +186,7 @@ export class KudosClient {
       this.storage.updateAgent(updated, event.createdAt);
       this.storage.insertEvent(event);
     });
-    this.projections.rebuild();
+    this.projections.syncAgent(updated.id);
     return updated;
   }
 
@@ -203,6 +205,7 @@ export class KudosClient {
 
   private async giveKudos(input: GiveKudosInput): Promise<GiveKudosResult> {
     this.checkAbort();
+    this.storage.assertEventCompatibility();
     const parsed = this.validate(() =>
       giveKudosSchema.parse({
         ...input,
@@ -215,10 +218,13 @@ export class KudosClient {
     }
     if (
       !this.storage.config.allowSelfAwards &&
-      this.actor.kind === 'agent' &&
+      this.actor.kind !== 'human' &&
       this.actor.id === recipient.id
     ) {
-      throw new KudosError('SELF_AWARD_FORBIDDEN', 'Agents cannot award kudos to themselves.');
+      throw new KudosError(
+        'SELF_AWARD_FORBIDDEN',
+        'Non-human actors cannot award kudos to a matching agent identity.',
+      );
     }
 
     const outcome = this.storage.transaction(() => {
@@ -250,13 +256,15 @@ export class KudosClient {
       this.storage.insertEvent(event);
       return { event, created: true };
     });
-    if (outcome.created) this.projections.rebuild();
+    if (outcome.created) this.projections.syncAgent(recipient.id);
     const record = this.getKudosRecord(outcome.event.id);
     return { record, created: outcome.created, deduplicated: !outcome.created };
   }
 
   private getKudosRecord(id: string): KudosRecord {
-    const record = recordsFromEvents(this.storage.getEvents()).find((item) => item.event.id === id);
+    const record = recordsFromEvents(this.storage.getReadableEvents()).find(
+      (item) => item.event.id === id,
+    );
     if (!record) throw new KudosError('KUDOS_NOT_FOUND', `Unknown kudos: ${id}`);
     return record;
   }
@@ -272,7 +280,7 @@ export class KudosClient {
     const recipient = filters.recipientAgentId
       ? this.storage.getAgent(filters.recipientAgentId)
       : undefined;
-    let records = recordsFromEvents(this.storage.getEvents());
+    let records = recordsFromEvents(this.storage.getReadableEvents());
     records = records.filter((record) => {
       const event = record.event;
       return (
@@ -298,6 +306,7 @@ export class KudosClient {
 
   private async acknowledgeKudos(input: { kudosId: string; note?: string }): Promise<KudosRecord> {
     this.checkAbort();
+    this.storage.assertEventCompatibility();
     if (input.note !== undefined && (input.note.trim().length < 1 || input.note.length > 2000)) {
       throw new KudosError('INVALID_INPUT', 'Acknowledgment notes must be 1–2000 characters.');
     }
@@ -305,10 +314,12 @@ export class KudosClient {
     if (record.acknowledgment) return record;
     if (record.revocation)
       throw new KudosError('INVALID_INPUT', 'Revoked kudos cannot be acknowledged.');
-    if (this.actor.kind === 'agent' && this.actor.id !== record.event.recipientAgentId) {
+    const isRecipient =
+      this.actor.kind === 'agent' && this.actor.id === record.event.recipientAgentId;
+    if (this.actor.kind !== 'human' && !isRecipient) {
       throw new KudosError(
         'ACKNOWLEDGMENT_FORBIDDEN',
-        'An agent may acknowledge only kudos addressed to itself.',
+        'Only the recipient agent or a human administrator may acknowledge kudos.',
       );
     }
     const event: KudosAcknowledgedEvent = {
@@ -322,7 +333,7 @@ export class KudosClient {
       ...(input.note ? { note: input.note.trim() } : {}),
     };
     this.storage.transaction(() => this.storage.insertEvent(event));
-    this.projections.rebuild();
+    this.projections.syncAgent(record.event.recipientAgentId);
     return this.getKudosRecord(input.kudosId);
   }
 
@@ -332,6 +343,7 @@ export class KudosClient {
     administrative?: boolean;
   }): Promise<KudosRecord> {
     this.checkAbort();
+    this.storage.assertEventCompatibility();
     const reason = input.reason.trim();
     if (!reason || reason.length > 2000) {
       throw new KudosError('INVALID_INPUT', 'Revocation reasons must be 1–2000 characters.');
@@ -340,8 +352,14 @@ export class KudosClient {
     if (record.revocation) return record;
     const isOriginalActor =
       record.event.actor.kind === this.actor.kind && record.event.actor.id === this.actor.id;
-    const administrative = input.administrative === true || this.actor.kind === 'human';
-    if (!isOriginalActor && !administrative && this.actor.kind !== 'system') {
+    if (input.administrative === true && this.actor.kind !== 'human') {
+      throw new KudosError(
+        'REVOCATION_FORBIDDEN',
+        'Only a human actor may request an administrative revocation.',
+      );
+    }
+    const administrative = this.actor.kind === 'human' && !isOriginalActor;
+    if (!isOriginalActor && this.actor.kind !== 'human') {
       throw new KudosError(
         'REVOCATION_FORBIDDEN',
         'Only the original actor or an administrator may revoke kudos.',
@@ -358,7 +376,7 @@ export class KudosClient {
       mode: administrative && !isOriginalActor ? 'administrative' : 'actor-requested',
     };
     this.storage.transaction(() => this.storage.insertEvent(event));
-    this.projections.rebuild();
+    this.projections.syncAgent(record.event.recipientAgentId);
     return this.getKudosRecord(input.kudosId);
   }
 
@@ -437,12 +455,22 @@ export class KudosClient {
         code: 'SQLITE_JOURNAL_MODE',
         message: `SQLite journal mode is ${journal}.`,
       });
-      const events = this.storage.getEvents();
-      diagnostics.push({
-        level: 'ok',
-        code: 'EVENTS_VALID',
-        message: `${events.length} canonical event${events.length === 1 ? '' : 's'} validated.`,
-      });
+      const eventScan = this.storage.scanEvents();
+      if (eventScan.invalid.length) {
+        for (const invalid of eventScan.invalid) {
+          diagnostics.push({
+            level: 'error',
+            code: invalid.error.code,
+            message: invalid.error.message,
+          });
+        }
+      } else {
+        diagnostics.push({
+          level: 'ok',
+          code: 'EVENTS_VALID',
+          message: `${eventScan.events.length} canonical event${eventScan.events.length === 1 ? '' : 's'} validated.`,
+        });
+      }
       const expected = this.projections.expectedPaths();
       const manifest = this.storage.projectionManifest().sort();
       const stale = JSON.stringify(expected) === JSON.stringify(manifest) ? [] : expected;
@@ -481,11 +509,23 @@ export class KudosClient {
 
   async export(format: 'json' | 'jsonl' | 'markdown'): Promise<string> {
     this.checkAbort();
-    const events = this.storage.getEvents();
-    if (format === 'json') return `${JSON.stringify(events, null, 2)}\n`;
-    if (format === 'jsonl') return `${events.map((event) => JSON.stringify(event)).join('\n')}\n`;
+    const rows = this.storage.rawEventRows();
+    if (format === 'jsonl') return `${rows.map((row) => row.payload).join('\n')}\n`;
+    const exported = rows.map((row) => {
+      try {
+        return JSON.parse(row.payload) as unknown;
+      } catch {
+        return { _agentKudosUnreadableEvent: { id: row.id, rawPayload: row.payload } };
+      }
+    });
+    if (format === 'json') return `${JSON.stringify(exported, null, 2)}\n`;
+    const scan = this.storage.scanEvents();
+    const events = scan.events;
     const records = recordsFromEvents(events);
-    return `${records
+    const warning = scan.invalid.length
+      ? `> Warning: ${scan.invalid.length} unsupported or malformed event(s) omitted from this Markdown view: ${scan.invalid.map((item) => item.id).join(', ')}\n\n`
+      : '';
+    return `${warning}${records
       .map(
         (record) =>
           `## ${escapeMarkdown(record.event.title)}\n\n${escapeMarkdown(record.event.reason)}\n\nStatus: ${record.revocationStatus === 'revoked' ? 'Revoked' : record.status === 'acknowledged' ? 'Acknowledged' : 'Unacknowledged'}\n\nKudos ID: \`${record.event.id}\``,

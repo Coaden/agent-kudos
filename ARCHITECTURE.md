@@ -25,13 +25,15 @@ Agent profile rows and aliases are transactional query indexes. Historical event
 
 ## Concurrency and durability
 
-SQLite uses WAL journaling, foreign keys, `synchronous=FULL`, a five-second busy timeout, and `BEGIN IMMEDIATE` write transactions. Actor-scoped idempotency is protected by a partial unique index. Concurrent local processes therefore serialize writes without relying on filename races.
+SQLite uses WAL journaling, foreign keys, `synchronous=FULL`, SQLite’s bounded five-second busy handler, and `BEGIN IMMEDIATE` write transactions. Actor-scoped idempotency is protected by a partial unique index. Concurrent local processes therefore serialize writes without relying on filename races or an unbounded application retry loop.
 
 V1 deliberately supports one machine and one filesystem owner. A later cloud backend can implement the same event semantics behind a new storage adapter, but remote access, authentication, authorization, tenancy, and conflict resolution are not present today.
 
 ## Projections
 
-Generated files are derived from canonical events and agent profiles. A database manifest records exactly which files Agent Kudos generated. Rebuild cleanup removes only manifest-listed regular files under the configured home; it never removes unknown files or follows symlinks. `NOTES.md` is created once and is never added to the manifest or overwritten.
+Generated files are derived from canonical events and agent profiles. Normal mutations synchronize only the affected agent, rewriting its profile and wins view while creating or removing only changed inbox entries. The explicit rebuild operation regenerates every projection. Derived writes use atomic replacement but omit durability barriers because canonical SQLite state can recreate them.
+
+A database manifest records exactly which files Agent Kudos generated. Cleanup removes only manifest-listed regular files under the configured home; it never removes unknown files or follows symlinks. `NOTES.md` is created once and is never added to the manifest or overwritten.
 
 Projection timestamps use the newest canonical event timestamp, so repeated rebuilds are byte-for-byte deterministic when history is unchanged.
 
@@ -46,4 +48,6 @@ Projection timestamps use the newest canonical event timestamp, so repeated rebu
 
 ## Versioning
 
-Database and event schemas start at version 1. Migrations are keyed by SQLite `user_version` and recorded in `schema_migrations`. A newer unsupported version fails closed. Pre-1.0 public APIs may change with release notes; persisted event semantics should remain migratable.
+Database and event schemas start at version 1. Migrations are keyed by SQLite `user_version` and recorded in `schema_migrations`. A newer database schema fails closed. Unsupported or malformed event rows are identified by storage ID in diagnostics, omitted from tolerant read models, and preserved by raw JSON/JSONL export. Writes and full projection rebuilds fail closed while any event semantics are unknown, preventing an older client from deriving and persistently acting on incomplete state.
+
+Pre-1.0 public APIs may change with release notes; persisted event semantics should remain migratable.

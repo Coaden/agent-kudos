@@ -40,6 +40,15 @@ export function assertNoSymlinkEscape(home: string, target: string): void {
 }
 
 export function atomicWriteFile(path: string, content: string, mode = 0o600): void {
+  atomicWrite(path, content, mode, true);
+}
+
+/** Atomically replace rebuildable derived data without forcing it to stable storage. */
+export function atomicWriteDerivedFile(path: string, content: string, mode = 0o600): void {
+  atomicWrite(path, content, mode, false);
+}
+
+function atomicWrite(path: string, content: string, mode: number, durable: boolean): void {
   ensureDirectory(dirname(path));
   const temporary = resolve(
     dirname(path),
@@ -49,21 +58,22 @@ export function atomicWriteFile(path: string, content: string, mode = 0o600): vo
   try {
     descriptor = openSync(temporary, 'wx', mode);
     writeFileSync(descriptor, content, 'utf8');
-    fsyncSync(descriptor);
+    if (durable) fsyncSync(descriptor);
     closeSync(descriptor);
     descriptor = undefined;
     renameSync(temporary, path);
-    try {
-      const directoryDescriptor = openSync(dirname(path), 'r');
+    if (durable)
       try {
-        fsyncSync(directoryDescriptor);
-      } finally {
-        closeSync(directoryDescriptor);
+        const directoryDescriptor = openSync(dirname(path), 'r');
+        try {
+          fsyncSync(directoryDescriptor);
+        } finally {
+          closeSync(directoryDescriptor);
+        }
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (!['EINVAL', 'EISDIR', 'EPERM'].includes(code ?? '')) throw error;
       }
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (!['EINVAL', 'EISDIR', 'EPERM'].includes(code ?? '')) throw error;
-    }
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
     if (existsSync(temporary)) unlinkSync(temporary);

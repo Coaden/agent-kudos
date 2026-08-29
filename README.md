@@ -142,8 +142,7 @@ See [Skill installation](docs/skill.md) for Codex, Claude Code, and repository-l
 ~/.agents/
 ├── kudos/
 │   ├── config.json
-│   ├── agent-kudos.sqlite3
-│   └── exports/
+│   └── agent-kudos.sqlite3
 └── codex/
     ├── profile.json        # generated
     ├── WINS.md             # generated
@@ -187,9 +186,30 @@ npm run demo
 
 `pack:check` creates a real npm tarball, installs it into a clean temporary project, imports both public export paths, and invokes both binaries.
 
+## Backup and safe restore
+
+`kudos backup ./agent-kudos-backup.sqlite3` creates a consistent, owner-readable SQLite snapshot. Validate a restore in a **new home** before switching agents to it; never overwrite a database while Agent Kudos processes are running:
+
+```bash
+RESTORE_HOME="$PWD/restored-agents"
+mkdir -p "$RESTORE_HOME/kudos"
+chmod 700 "$RESTORE_HOME" "$RESTORE_HOME/kudos"
+install -m 600 ./agent-kudos-backup.sqlite3 "$RESTORE_HOME/kudos/agent-kudos.sqlite3"
+kudos --home "$RESTORE_HOME" doctor
+kudos --home "$RESTORE_HOME" rebuild
+```
+
+After both commands succeed, stop writers using the old home and point `AGENT_KUDOS_HOME` at the validated restored home. See the [recovery guide](docs/recovery.md) for Windows instructions and rollback guidance.
+
+## Future cloud direction
+
+V1 deliberately shares one local SQLite database among processes owned by one user on one machine. A future cloud backend may preserve the public event semantics, but it will be a separate design with authentication, authorization, tenant isolation, transport security, conflict handling, availability, and explicit data migration. The live SQLite file will never be treated as a cloud synchronization protocol.
+
 ## Project status
 
 Agent Kudos is under active development toward its first npm release. The public API and storage schema should be treated as pre-1.0. Release notes and migration guidance live in [CHANGELOG.md](CHANGELOG.md).
+
+Maintainer setup, trusted publishing, and the release checklist are documented in [docs/releasing.md](docs/releasing.md).
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), follow the [Code of Conduct](CODE_OF_CONDUCT.md), and review [SECURITY.md](SECURITY.md) before reporting a vulnerability.
 

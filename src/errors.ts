@@ -2,6 +2,7 @@ export const errorCodes = [
   'INVALID_INPUT',
   'INVALID_AGENT_ID',
   'INVALID_EVENT',
+  'UNSUPPORTED_EVENT',
   'AGENT_NOT_FOUND',
   'AGENT_EXISTS',
   'ALIAS_CONFLICT',

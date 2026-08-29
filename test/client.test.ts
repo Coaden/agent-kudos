@@ -107,6 +107,43 @@ describe('KudosClient identities and events', () => {
     await giver.close();
   });
 
+  it('does not grant system actors implicit agent or administrator authority', async () => {
+    const home = tempHome();
+    const human = await seed(home);
+    const given = await human.kudos.give({
+      recipientAgentId: 'codex',
+      title: 'Policy boundary',
+      reason: 'Provides a record for authorization checks.',
+    });
+    await human.close();
+
+    const system = await testClient(home, { kind: 'system', id: 'codex' });
+    await expect(
+      system.kudos.give({
+        recipientAgentId: 'codex',
+        title: 'System self award',
+        reason: 'A system identity must not impersonate its matching agent ID.',
+      }),
+    ).rejects.toMatchObject({ code: 'SELF_AWARD_FORBIDDEN' });
+    await expect(
+      system.kudos.acknowledge({ kudosId: given.record.event.id }),
+    ).rejects.toMatchObject({ code: 'ACKNOWLEDGMENT_FORBIDDEN' });
+    await expect(
+      system.kudos.revoke({
+        kudosId: given.record.event.id,
+        reason: 'Unauthorized administrative request.',
+        administrative: true,
+      }),
+    ).rejects.toMatchObject({ code: 'REVOCATION_FORBIDDEN' });
+    await expect(
+      system.kudos.revoke({
+        kudosId: given.record.event.id,
+        reason: 'Unauthorized non-administrative request.',
+      }),
+    ).rejects.toMatchObject({ code: 'REVOCATION_FORBIDDEN' });
+    await system.close();
+  });
+
   it('supports every list filter, deterministic ordering, and pagination', async () => {
     const home = tempHome();
     const human = await seed(home);

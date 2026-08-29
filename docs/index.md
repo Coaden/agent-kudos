@@ -17,6 +17,7 @@ Agent Kudos is a local-first system for recording specific, durable recognition 
 - [MCP server and agent setup](mcp.md)
 - [Agent skill installation](skill.md)
 - [Storage format](storage-format.md)
+- [Backup and recovery](recovery.md)
 - [Examples](examples.md)
 - [Architecture](https://github.com/Coaden/agent-kudos/blob/main/ARCHITECTURE.md)
 - [Security model](https://github.com/Coaden/agent-kudos/blob/main/SECURITY.md)

@@ -1,4 +1,15 @@
-import { existsSync, lstatSync, mkdirSync } from 'node:fs';
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  lstatSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  rmdirSync,
+  unlinkSync,
+} from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultConfig, mergeConfig } from './config.js';
@@ -18,7 +29,13 @@ import type {
 } from './types.js';
 
 interface EventRow {
+  id: string;
   payload: string;
+}
+
+export interface EventScan {
+  events: KudosEvent[];
+  invalid: Array<{ id: string; error: KudosError }>;
 }
 
 interface ProfileRow {
@@ -127,6 +144,10 @@ export class KudosStorage {
       }
       if (!this.readOnly) ensureDirectory(this.kudosDirectory);
       assertNoSymlinkEscape(this.home, this.kudosDirectory);
+      if (!this.readOnly) {
+        chmodSync(this.kudosDirectory, 0o700);
+        if (!existsSync(this.databasePath)) closeSync(openSync(this.databasePath, 'wx', 0o600));
+      }
 
       const fileConfig = existsSync(this.configPath) ? readJsonFile(this.configPath) : undefined;
       this.config = mergeConfig(fileConfig, this.configOverrides);
@@ -142,6 +163,7 @@ export class KudosStorage {
       if (!this.readOnly) {
         this.database.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
         this.migrate();
+        this.restrictDatabaseFiles();
       } else {
         this.assertSchemaSupported();
       }
@@ -202,16 +224,22 @@ export class KudosStorage {
   transaction<T>(operation: () => T): T {
     this.assertWritable();
     const db = this.db();
-    db.exec('BEGIN IMMEDIATE');
+    let began = false;
     try {
+      db.exec('BEGIN IMMEDIATE');
+      began = true;
       const result = operation();
       db.exec('COMMIT');
+      began = false;
+      this.restrictDatabaseFiles();
       return result;
     } catch (error) {
-      try {
-        db.exec('ROLLBACK');
-      } catch {
-        // Preserve the original failure.
+      if (began) {
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          // Preserve the original failure.
+        }
       }
       throw asKudosError(error);
     }
@@ -252,35 +280,91 @@ export class KudosStorage {
   }
 
   getEvent(id: string): KudosEvent | undefined {
-    const row = this.db().prepare('SELECT payload FROM events WHERE id = ?').get(id) as
+    const row = this.db().prepare('SELECT id, payload FROM events WHERE id = ?').get(id) as
       EventRow | undefined;
-    return row ? this.parseEvent(row.payload, id) : undefined;
+    return row ? this.parseEvent(row) : undefined;
   }
 
   getEventByIdempotency(actorKind: string, actorId: string, key: string): KudosEvent | undefined {
     const row = this.db()
       .prepare(
-        `SELECT payload FROM events
+        `SELECT id, payload FROM events
          WHERE type = 'kudos.given' AND actor_kind = ? AND actor_id = ? AND idempotency_key = ?`,
       )
       .get(actorKind, actorId, key) as EventRow | undefined;
-    return row ? this.parseEvent(row.payload) : undefined;
+    return row ? this.parseEvent(row) : undefined;
   }
 
   getEvents(): KudosEvent[] {
-    const rows = this.db()
-      .prepare('SELECT payload FROM events ORDER BY created_at ASC, id ASC')
-      .all() as unknown as EventRow[];
-    return rows.map((row) => this.parseEvent(row.payload));
+    const scan = this.scanEvents();
+    if (scan.invalid[0]) throw scan.invalid[0].error;
+    return scan.events;
   }
 
-  private parseEvent(payload: string, id?: string): KudosEvent {
+  getReadableEvents(): KudosEvent[] {
+    return this.scanEvents().events;
+  }
+
+  scanEvents(): EventScan {
+    const rows = this.rawEventRows();
+    const events: KudosEvent[] = [];
+    const invalid: EventScan['invalid'] = [];
+    for (const row of rows) {
+      try {
+        events.push(this.parseEvent(row));
+      } catch (error) {
+        const parsed = asKudosError(error);
+        invalid.push({ id: row.id, error: parsed });
+      }
+    }
+    return { events, invalid };
+  }
+
+  assertEventCompatibility(): void {
+    const invalid = this.scanEvents().invalid;
+    if (!invalid.length) return;
+    const first = invalid[0]!;
+    throw new KudosError(
+      first.error.code,
+      `Cannot write while canonical event ${first.id} is unsupported or malformed; upgrade Agent Kudos or inspect with kudos doctor and export.`,
+      { eventIds: invalid.map((item) => item.id) },
+    );
+  }
+
+  rawEventRows(): EventRow[] {
+    return this.db()
+      .prepare('SELECT id, payload FROM events ORDER BY created_at ASC, id ASC')
+      .all() as unknown as EventRow[];
+  }
+
+  private parseEvent(row: EventRow): KudosEvent {
     try {
-      return eventSchema.parse(JSON.parse(payload));
+      const value = JSON.parse(row.payload) as unknown;
+      if (typeof value === 'object' && value !== null) {
+        const candidate = value as { schemaVersion?: unknown; type?: unknown };
+        const supportedTypes = new Set([
+          'agent.created',
+          'agent.updated',
+          'kudos.given',
+          'kudos.acknowledged',
+          'kudos.revoked',
+        ]);
+        if (
+          (typeof candidate.schemaVersion === 'number' && candidate.schemaVersion > 1) ||
+          (typeof candidate.type === 'string' && !supportedTypes.has(candidate.type))
+        ) {
+          throw new KudosError(
+            'UNSUPPORTED_EVENT',
+            `Event ${row.id} was written by a newer or incompatible Agent Kudos version.`,
+          );
+        }
+      }
+      return eventSchema.parse(value);
     } catch (error) {
+      if (error instanceof KudosError) throw error;
       throw new KudosError(
         'INVALID_EVENT',
-        `Malformed event${id ? ` ${id}` : ''} in canonical storage.`,
+        `Unsupported or malformed event ${row.id} in canonical storage.`,
         {
           cause: error instanceof Error ? error.message : String(error),
         },
@@ -347,6 +431,18 @@ export class KudosStorage {
     });
   }
 
+  replaceAgentProjectionManifest(agentId: string, paths: string[], generatedAt: string): void {
+    this.transaction(() => {
+      this.db()
+        .prepare('DELETE FROM projection_manifest WHERE path LIKE ? OR path LIKE ?')
+        .run(`${agentId}/%`, `${agentId}\\%`);
+      const insert = this.db().prepare(
+        'INSERT INTO projection_manifest(path, generated_at) VALUES (?, ?)',
+      );
+      for (const path of paths) insert.run(path, generatedAt);
+    });
+  }
+
   projectionManifest(): string[] {
     return (
       this.db().prepare('SELECT path FROM projection_manifest ORDER BY path').all() as unknown as {
@@ -378,9 +474,31 @@ export class KudosStorage {
       );
     }
     ensureDirectory(dirname(output));
-    const escaped = output.replaceAll("'", "''");
-    this.db().exec(`VACUUM INTO '${escaped}'`);
-    return output;
+    const temporaryDirectory = mkdtempSync(join(dirname(output), '.agent-kudos-backup-'));
+    chmodSync(temporaryDirectory, 0o700);
+    const temporaryOutput = join(temporaryDirectory, basename(output));
+    try {
+      const escaped = temporaryOutput.replaceAll("'", "''");
+      this.db().exec(`VACUUM INTO '${escaped}'`);
+      chmodSync(temporaryOutput, 0o600);
+      linkSync(temporaryOutput, output);
+      unlinkSync(temporaryOutput);
+      return output;
+    } finally {
+      if (existsSync(temporaryOutput)) unlinkSync(temporaryOutput);
+      rmdirSync(temporaryDirectory);
+    }
+  }
+
+  private restrictDatabaseFiles(): void {
+    if (this.readOnly) return;
+    for (const path of [
+      this.databasePath,
+      `${this.databasePath}-wal`,
+      `${this.databasePath}-shm`,
+    ]) {
+      if (existsSync(path)) chmodSync(path, 0o600);
+    }
   }
 
   close(): void {

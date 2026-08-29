@@ -27,6 +27,18 @@
   "files": [
     "dist",
     "skills/agent-kudos",
+    "docs/cli.md",
+    "docs/examples.md",
+    "docs/mcp.md",
+    "docs/recovery.md",
+    "docs/releasing.md",
+    "docs/skill.md",
+    "docs/storage-format.md",
+    "AGENTS.md",
+    "ARCHITECTURE.md",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
     "README.md",
     "LICENSE",
     "SECURITY.md"

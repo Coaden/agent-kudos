@@ -98,7 +98,7 @@ kudos doctor
 kudos rebuild
 ```
 
-`doctor` checks SQLite integrity and journal mode, event validation, schema compatibility, projection state, and unsafe agent-directory symlinks. An unhealthy result uses exit code 5.
+`doctor` checks SQLite integrity and journal mode, event validation, schema compatibility, projection state, and unsafe agent-directory symlinks. Unsupported or malformed events are reported with their storage row IDs. An unhealthy result uses exit code 5 and does not contaminate later in-process CLI invocations.
 
 ## Export and backup
 
@@ -109,7 +109,9 @@ kudos export --format markdown
 kudos backup ./agent-kudos-backup.sqlite3
 ```
 
-Exports default to stdout. A backup destination must not already exist. Backups use SQLite’s consistent snapshot behavior rather than copying a live database file.
+Exports default to stdout. JSON and JSONL remain available when a future or malformed event cannot be interpreted, making them the recovery formats. A backup destination must not already exist. Backups use SQLite’s consistent snapshot behavior rather than copying a live database file and are restricted to the current user where POSIX modes are available.
+
+See [Backup and restore](recovery.md) before restoring a snapshot. Never overwrite an active database.
 
 ## MCP
 

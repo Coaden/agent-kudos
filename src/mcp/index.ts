@@ -4,7 +4,15 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { KudosClient } from '../client.js';
 import { KudosError, asKudosError } from '../errors.js';
-import { actorSchema, agentIdSchema, evidenceSchema, listInputSchema } from '../schemas.js';
+import {
+  actorSchema,
+  agentIdSchema,
+  evidenceSchema,
+  kudosTagSchema,
+  kudosTitleSchema,
+  listInputSchema,
+} from '../schemas.js';
+import { packageVersion } from '../version.js';
 import type { ActorIdentity, KudosClientOptions, KudosListInput, KudosRecord } from '../types.js';
 
 export interface AgentKudosMcpOptions extends Omit<KudosClientOptions, 'actor'> {
@@ -89,7 +97,7 @@ export async function createAgentKudosMcpServer(
   const client = new KudosClient({ ...options, actor });
   await client.init();
   const server = new McpServer(
-    { name: 'agent-kudos', version: '0.1.0' },
+    { name: 'agent-kudos', version: packageVersion() },
     {
       instructions:
         'Record concrete, observed contributions. Do not award routine completion, generic politeness, invented accomplishments, secrets, or self-kudos. The server binds every write to its configured actor.',
@@ -104,10 +112,10 @@ export async function createAgentKudosMcpServer(
         'Use when a human explicitly requests recognition or a peer agent made a concrete, unusually useful contribution. State what the recipient did and why it mattered. Do not use for routine completion, generic politeness, self-congratulation, invented work, secrets, or raw sensitive tool output.',
       inputSchema: z.object({
         recipientAgentId: agentIdSchema,
-        title: z.string().trim().min(1).max(200),
+        title: kudosTitleSchema,
         reason: z.string().trim().min(1).max(5000),
         evidence: z.array(evidenceSchema).max(50).optional(),
-        tags: z.array(z.string().trim().min(1).max(64)).max(50).optional(),
+        tags: z.array(kudosTagSchema).max(50).optional(),
         visibility: z.enum(['private', 'local', 'public']).optional(),
         idempotencyKey: z.string().trim().min(1).max(200).optional(),
       }),
@@ -224,10 +232,10 @@ export async function createAgentKudosMcpServer(
     },
     async (input) => {
       try {
-        if (input.administrative && actor.kind === 'agent') {
+        if (input.administrative && actor.kind !== 'human') {
           throw new KudosError(
             'POLICY_FORBIDDEN',
-            'Agent actors cannot request administrative revocation.',
+            'Only human actors can request administrative revocation.',
           );
         }
         const record = await client.kudos.revoke(input);

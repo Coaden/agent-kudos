@@ -23,7 +23,7 @@ Agent Kudos is a local audit-friendly record, not a tamper-proof ledger.
 - Agent IDs reject traversal syntax, separators, controls, and reserved names.
 - Reads and writes are constrained to the configured home; existing symlink components are rejected.
 - Generated cleanup is constrained by a canonical manifest and accepts only regular files.
-- SQLite WAL, shared-memory, database, config, and projection files are created for the local user, with restrictive file modes where Node permits.
+- SQLite WAL, shared-memory, database, config, projection, export, and backup files created by Agent Kudos are restricted to the local user where the platform exposes POSIX modes.
 - WAL, foreign keys, full synchronization, bounded busy waits, transactions, integrity checks, and append-only triggers reduce corruption and concurrency risks.
 - Backups use SQLite `VACUUM INTO` for a consistent snapshot. Do not copy a live database naively.
 - Never use Dropbox, Git synchronization, generic network filesystems, or file-copy synchronization as a multi-writer protocol for the live database.
@@ -44,8 +44,8 @@ Public events may be exported, committed, or published. Review exports before sh
 
 ## MCP
 
-V1 uses stdio only and opens no network listener. MCP tools never accept arbitrary output paths. Agent creation and projection rebuild are disabled through MCP by default. Agent actors cannot request administrative revocation or acknowledge another agent’s kudos.
+V1 uses stdio only and opens no network listener. MCP tools never accept arbitrary output paths. Agent creation and projection rebuild are disabled through MCP by default. Human actors have local administrative authority. Agent actors can acknowledge only their own kudos. System actors are automation identities—not implicit agents or administrators—and receive no self-award, acknowledgment, or cross-actor revocation bypass.
 
 ## Nonrepudiation
 
-Append-only application behavior and optional content hashes can make accidental alteration visible, but an unsigned database controlled by its owner can be rewritten. Agent Kudos must not be described as cryptographically tamper-proof or legally nonrepudiable.
+Append-only application behavior makes ordinary history changes explicit, but an unsigned database controlled by its owner can be rewritten. Agent Kudos does not currently implement content hashes or signatures and must not be described as cryptographically tamper-proof or legally nonrepudiable.

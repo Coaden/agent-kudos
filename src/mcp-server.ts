@@ -2,6 +2,9 @@
 import { parseArgs } from 'node:util';
 import { actorSchema } from './schemas.js';
 import { startMcpServer } from './mcp/index.js';
+import { packageVersion } from './version.js';
+
+const version = packageVersion();
 
 const { values } = parseArgs({
   options: {
@@ -15,7 +18,7 @@ const { values } = parseArgs({
 });
 
 if (values.help) {
-  process.stdout.write(`agent-kudos-mcp 0.1.0
+  process.stdout.write(`agent-kudos-mcp ${version}
 
 Actor-bound Agent Kudos MCP server (stdio transport)
 
@@ -28,7 +31,7 @@ Options:
   -v, --version          Show version
 `);
 } else if (values.version) {
-  process.stdout.write('0.1.0\n');
+  process.stdout.write(`${version}\n`);
 } else {
   const actor = actorSchema.parse({
     id: values['actor-id'] ?? process.env.AGENT_KUDOS_ACTOR_ID,

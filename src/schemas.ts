@@ -105,6 +105,20 @@ const baseEventSchema = z.object({
   metadata: metadataSchema.optional(),
 });
 
+export const kudosTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[^\r\n]+$/, 'Kudos titles must be a single line');
+
+export const kudosTagSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u);
+
 const kudosGivenSchema = baseEventSchema.extend({
   type: z.literal('kudos.given'),
   recipientAgentId: agentIdSchema,
@@ -112,17 +126,7 @@ const kudosGivenSchema = baseEventSchema.extend({
   title: z.string().trim().min(1).max(200),
   reason: z.string().trim().min(1).max(5000),
   evidence: z.array(evidenceSchema).max(50).optional(),
-  tags: z
-    .array(
-      z
-        .string()
-        .trim()
-        .min(1)
-        .max(64)
-        .regex(/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u),
-    )
-    .max(50)
-    .optional(),
+  tags: z.array(kudosTagSchema).max(50).optional(),
   visibility: z.enum(['private', 'local', 'public']),
   idempotencyKey: z.string().trim().min(1).max(200).optional(),
 });
@@ -160,14 +164,16 @@ export const eventSchema = z.discriminatedUnion('type', [
   agentUpdatedSchema,
 ]);
 
-export const giveKudosSchema = kudosGivenSchema.omit({
-  schemaVersion: true,
-  id: true,
-  type: true,
-  createdAt: true,
-  actor: true,
-  recipientDisplayName: true,
-});
+export const giveKudosSchema = kudosGivenSchema
+  .omit({
+    schemaVersion: true,
+    id: true,
+    type: true,
+    createdAt: true,
+    actor: true,
+    recipientDisplayName: true,
+  })
+  .extend({ title: kudosTitleSchema });
 
 export const listInputSchema = z.object({
   recipientAgentId: agentIdSchema.optional(),

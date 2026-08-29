@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -9,6 +9,7 @@ import { asKudosError, KudosError, type KudosErrorCode } from './errors.js';
 import { atomicWriteFile } from './fs-utils.js';
 import { startMcpServer } from './mcp/index.js';
 import type { ActorIdentity, EvidenceReference, KudosListInput, KudosRecord } from './types.js';
+import { packageVersion } from './version.js';
 
 export interface CliIo {
   stdout: (text: string) => void;
@@ -19,6 +20,8 @@ const defaultIo: CliIo = {
   stdout: (text) => process.stdout.write(text),
   stderr: (text) => process.stderr.write(text),
 };
+
+const cliExitCodes = new WeakMap<Command, number>();
 
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
@@ -46,7 +49,8 @@ function actor(kind: string, id: string, displayName?: string): ActorIdentity {
 function exitCode(code: KudosErrorCode): number {
   if (code === 'AGENT_NOT_FOUND' || code === 'KUDOS_NOT_FOUND') return 3;
   if (code.endsWith('_FORBIDDEN') || code === 'READ_ONLY') return 4;
-  if (code.startsWith('DATABASE_') || code === 'UNSUPPORTED_SCHEMA') return 5;
+  if (code.startsWith('DATABASE_') || code === 'UNSUPPORTED_SCHEMA' || code === 'UNSUPPORTED_EVENT')
+    return 5;
   if (code === 'INTERNAL_ERROR') return 1;
   return 2;
 }
@@ -139,10 +143,11 @@ function listInput(options: Record<string, string>): KudosListInput {
 
 export function createCli(io: CliIo = defaultIo): Command {
   const program = new Command();
+  cliExitCodes.set(program, 0);
   program
     .name('kudos')
     .description('Local-first recognition and accomplishment infrastructure for AI agents')
-    .version('0.1.0')
+    .version(packageVersion())
     .option('--home <path>', 'storage root (defaults to AGENT_KUDOS_HOME or ~/.agents)')
     .option('--json', 'emit stable machine-readable JSON', false)
     .showSuggestionAfterError()
@@ -430,6 +435,15 @@ export function createCli(io: CliIo = defaultIo): Command {
         const details = await withClient(global.home, actor('system', 'cli'), async (client) => {
           const profile = await client.agents.get(agentId);
           const path = join(client.home, profile.id, 'WINS.md');
+          if (!existsSync(path)) {
+            const hint = client.storage.config.projection.writeWinsMarkdown
+              ? 'Run `kudos rebuild` to generate it.'
+              : 'Enable projection.writeWinsMarkdown and run `kudos rebuild`.';
+            throw new KudosError(
+              'INVALID_INPUT',
+              `No generated WINS.md exists for ${profile.id}. ${hint}`,
+            );
+          }
           return { profile, path, content: readFileSync(path, 'utf8') };
         });
         if (options.open) {
@@ -532,7 +546,7 @@ export function createCli(io: CliIo = defaultIo): Command {
         .map((item) => `${item.level.toUpperCase().padEnd(7)} ${item.code}: ${item.message}`)
         .join('\n');
       output(io, global.json, result, human);
-      if (!result.healthy) process.exitCode = 5;
+      if (!result.healthy) cliExitCodes.set(program, 5);
     });
 
   program
@@ -562,7 +576,7 @@ export async function runCli(argv = process.argv, io: CliIo = defaultIo): Promis
   program.exitOverride();
   try {
     await program.parseAsync(argv);
-    return typeof process.exitCode === 'number' ? process.exitCode : 0;
+    return cliExitCodes.get(program) ?? 0;
   } catch (error) {
     if (error instanceof CommanderError && error.exitCode === 0) return 0;
     if (error instanceof CommanderError) {

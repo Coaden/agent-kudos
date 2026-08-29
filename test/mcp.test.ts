@@ -57,11 +57,13 @@ describe('MCP protocol integration', () => {
     const giveSchema = tools.tools.find((tool) => tool.name === 'kudos_give')?.inputSchema as {
       type?: string;
       required?: string[];
+      properties?: { tags?: { items?: { pattern?: string } } };
     };
     expect(giveSchema.type).toBe('object');
     expect(giveSchema.required).toEqual(
       expect.arrayContaining(['recipientAgentId', 'title', 'reason']),
     );
+    expect(giveSchema.properties?.tags?.items?.pattern).toBeTruthy();
     const templates = await protocolClient.listResourceTemplates();
     expect(templates.resourceTemplates.map((resource) => resource.uriTemplate)).toContain(
       'kudos://agents/{agentId}/inbox',

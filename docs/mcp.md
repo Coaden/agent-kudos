@@ -47,18 +47,18 @@ These CLI forms were verified against the installed Codex and Claude Code help. 
 
 ## Tools
 
-| Tool                 | Purpose                                | Policy                                           |
-| -------------------- | -------------------------------------- | ------------------------------------------------ |
-| `kudos_give`         | Record specific recognition            | Actor-bound; self-awards denied by default       |
-| `kudos_list`         | Filter recognition or inspect an inbox | Read-only; visibility-aware                      |
-| `kudos_get`          | Read one item and derived state        | Read-only; visibility-aware                      |
-| `kudos_acknowledge`  | Record recipient review                | Agent may acknowledge only its own kudos         |
-| `kudos_revoke`       | Append a reasoned revocation           | Giver or administrator; agent cannot claim admin |
-| `kudos_stats`        | Aggregate counts                       | Omits private content by default                 |
-| `kudos_agent_create` | Create an identity                     | Disabled by default                              |
-| `kudos_agent_list`   | List identities and aliases            | Read-only                                        |
-| `kudos_rebuild`      | Regenerate projections                 | Disabled by default                              |
-| `kudos_doctor`       | Run safe diagnostics                   | Read-only                                        |
+| Tool                 | Purpose                                | Policy                                     |
+| -------------------- | -------------------------------------- | ------------------------------------------ |
+| `kudos_give`         | Record specific recognition            | Actor-bound; self-awards denied by default |
+| `kudos_list`         | Filter recognition or inspect an inbox | Read-only; visibility-aware                |
+| `kudos_get`          | Read one item and derived state        | Read-only; visibility-aware                |
+| `kudos_acknowledge`  | Record recipient review                | Agent may acknowledge only its own kudos   |
+| `kudos_revoke`       | Append a reasoned revocation           | Original actor or human administrator      |
+| `kudos_stats`        | Aggregate counts                       | Omits private content by default           |
+| `kudos_agent_create` | Create an identity                     | Disabled by default                        |
+| `kudos_agent_list`   | List identities and aliases            | Read-only                                  |
+| `kudos_rebuild`      | Regenerate projections                 | Disabled by default                        |
+| `kudos_doctor`       | Run safe diagnostics                   | Read-only                                  |
 
 Every tool declares a precise JSON schema, behavior guidance, MCP annotations, concise text content, structured content, the bound actor, and stable Agent Kudos error codes.
 
@@ -102,5 +102,7 @@ Edit `~/.agents/kudos/config.json` while the server is stopped:
 ```
 
 Local filesystem owners retain ultimate control. Actor binding limits ordinary MCP behavior; it is not cryptographic authentication.
+
+`system` is an automation identity, not an implicit administrator or agent impersonation mechanism. It cannot self-award through a matching agent ID, acknowledge recipient kudos, request administrative revocation, or revoke another actor’s kudos. Bind a human actor only to a process the local owner intentionally trusts with administrative authority.
 
 Configuration precedence is explicit API/CLI options, validated environment variables, `config.json`, then safe defaults. Supported policy environment variables are `AGENT_KUDOS_DEFAULT_VISIBILITY`, `AGENT_KUDOS_ALLOW_SELF_AWARDS`, `AGENT_KUDOS_ALLOW_AGENT_CREATION_VIA_MCP`, `AGENT_KUDOS_ALLOW_REBUILD_VIA_MCP`, `AGENT_KUDOS_INCLUDE_PRIVATE_IN_STATS`, `AGENT_KUDOS_WRITE_WINS_MARKDOWN`, and `AGENT_KUDOS_WRITE_INBOX_ENTRIES`. Boolean values must be exactly `true` or `false`; arbitrary JSON is never accepted from the environment.

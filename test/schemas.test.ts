@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentIdSchema, evidenceSchema, escapeMarkdown } from '../src/index.js';
+import { agentIdSchema, evidenceSchema, escapeMarkdown, giveKudosSchema } from '../src/index.js';
 
 describe('validation and escaping', () => {
   it.each(['codex', 'gracie-p-tienamme', 'agent-42'])('accepts agent ID %s', (id) => {
@@ -27,5 +27,21 @@ describe('validation and escaping', () => {
     expect(escapeMarkdown('# <script>*boom*</script>')).toBe(
       '\\# &lt;script&gt;\\*boom\\*&lt;/script&gt;',
     );
+    expect(escapeMarkdown('Clear prose. Follow-up work.')).toBe('Clear prose. Follow-up work.');
+  });
+
+  it('requires single-line titles and applies the published tag grammar', () => {
+    const base = {
+      recipientAgentId: 'codex',
+      reason: 'Concrete contribution.',
+      visibility: 'local' as const,
+    };
+    expect(() => giveKudosSchema.parse({ ...base, title: 'Heading\ninjection' })).toThrow();
+    expect(() =>
+      giveKudosSchema.parse({ ...base, title: 'Valid title', tags: ['invalid tag'] }),
+    ).toThrow();
+    expect(
+      giveKudosSchema.parse({ ...base, title: 'Valid title', tags: ['review.excellent'] }).tags,
+    ).toEqual(['review.excellent']);
   });
 });

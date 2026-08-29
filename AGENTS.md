@@ -18,6 +18,9 @@ This repository is a public TypeScript package. Changes should be reviewable, po
 - MCP writes use the actor bound at server startup. Tool arguments cannot override it.
 - `WINS.md`, inbox files, and `profile.json` are generated projections. `NOTES.md` is human-owned and must never be overwritten.
 - Projection cleanup may remove only regular files listed in the generated-files manifest.
+- Normal mutations must not rebuild or rewrite every pending inbox entry; full regeneration belongs to the explicit rebuild operation.
+- `system` actors are automation identities and have no implicit agent or administrative authority.
+- Raw JSON/JSONL export must remain available when canonical rows are unsupported or malformed; writes must fail closed across unknown event semantics.
 - Do not follow symlinks outside the configured home.
 - Evidence is descriptive metadata, never captured tool output or secret material.
 - No filesystem work occurs at module import time, and library code never calls `process.exit()`.
