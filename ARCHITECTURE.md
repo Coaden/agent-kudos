@@ -29,6 +29,8 @@ Machine-facing discovery never reconstructs and returns the whole event history.
 
 This split makes context consumption proportional to the caller's explicit request even when the database contains thousands of records. `WINS.md` is a human projection and is not a machine query source.
 
+The current-state index is derived, but contradictions must never be silent: `doctor` compares indexed acknowledgment and revocation state with canonical events, and `rebuild` repairs the index from those events.
+
 ## Concurrency and durability
 
 SQLite uses WAL journaling, foreign keys, `synchronous=FULL`, SQLite’s bounded five-second busy handler, and `BEGIN IMMEDIATE` write transactions. Actor-scoped idempotency is protected by a partial unique index. Concurrent local processes therefore serialize writes without relying on filename races or an unbounded application retry loop.
@@ -55,5 +57,7 @@ Projection timestamps use the newest canonical event timestamp, so repeated rebu
 ## Versioning
 
 Event payload schemas start at version 1. The SQLite schema is version 2; migrations are keyed by SQLite `user_version` and recorded in `schema_migrations`. A newer database schema fails closed. Unsupported or malformed event rows are identified by storage ID in diagnostics, omitted from tolerant read models, and preserved by raw JSON/JSONL export. Writes and full projection rebuilds fail closed while any event semantics are unknown, preventing an older client from deriving and persistently acting on incomplete state.
+
+A read-only client never mutates an older schema. Opening a version 1 database read-only returns an actionable error directing the owner to open the home once with a writable client, which performs the transactional migration, before retrying.
 
 Pre-1.0 public APIs may change with release notes; persisted event semantics should remain migratable.

@@ -246,29 +246,77 @@ describe('SQLite storage and projections', () => {
     `);
     legacy.close();
 
+    const readOnly = new KudosClient({ home, readOnly: true });
+    await expect(readOnly.init()).rejects.toThrow(/readOnly: false/);
+
     const migrated = await testClient(home);
     expect(
       (migrated.storage.db().prepare('PRAGMA user_version').get() as { user_version: number })
         .user_version,
     ).toBe(2);
     expect((await migrated.kudos.list()).items[0]?.id).toBe(given.record.event.id);
-    expect(migrated.storage.currentIndexCounts()).toEqual({ given: 1, indexed: 1 });
+    expect(migrated.storage.currentIndexHealth()).toEqual({
+      given: 1,
+      indexed: 1,
+      stateMismatches: 0,
+    });
     await migrated.close();
   });
 
-  it('diagnoses and rebuilds a missing current-state index row', async () => {
+  it('diagnoses and rebuilds current-state status drift', async () => {
     const client = await testClient(tempHome());
     await client.agents.create({ id: 'codex', displayName: 'Codex' });
-    await client.kudos.give({
+    const given = await client.kudos.give({
       recipientAgentId: 'codex',
       title: 'Recoverable recognition',
       reason: 'Canonical history can recreate a damaged derived query index.',
     });
-    client.storage.db().prepare('DELETE FROM kudos_current').run();
-    expect(await client.doctor()).toMatchObject({ healthy: false });
+    await client.kudos.acknowledge({ kudosId: given.record.event.id });
+    await client.kudos.revoke({
+      kudosId: given.record.event.id,
+      reason: 'Exercises repair of both derived state fields.',
+    });
+    client.storage
+      .db()
+      .prepare("UPDATE kudos_current SET status = 'unacknowledged', revocation_status = 'active'")
+      .run();
+    const unhealthy = await client.doctor();
+    expect(unhealthy).toMatchObject({ healthy: false });
+    expect(
+      unhealthy.diagnostics.find((item) => item.code === 'CURRENT_INDEX_INCONSISTENT')?.message,
+    ).toContain('1 state mismatch detected');
+    expect((await client.kudos.list()).items[0]?.status).toBe('unacknowledged');
+    expect((await client.kudos.list()).items[0]?.revocationStatus).toBe('active');
+    expect(await client.kudos.get(given.record.event.id)).toMatchObject({
+      status: 'acknowledged',
+      revocationStatus: 'revoked',
+    });
     client.projections.rebuild();
     expect((await client.kudos.list()).total).toBe(1);
+    expect((await client.kudos.list()).items[0]?.status).toBe('acknowledged');
+    expect((await client.kudos.list()).items[0]?.revocationStatus).toBe('revoked');
     expect(await client.doctor()).toMatchObject({ healthy: true });
+    await client.close();
+  });
+
+  it('diagnoses migration metadata and alias-to-identity conflicts', async () => {
+    const client = await testClient(tempHome());
+    await client.agents.create({ id: 'codex', displayName: 'Codex' });
+    await client.agents.create({ id: 'gracie', displayName: 'Gracie' });
+    client.storage
+      .db()
+      .prepare("INSERT INTO aliases(alias, agent_id) VALUES ('codex', 'gracie')")
+      .run();
+    client.storage.db().prepare('DELETE FROM schema_migrations WHERE version = 2').run();
+
+    const doctor = await client.doctor();
+    expect(doctor.healthy).toBe(false);
+    expect(doctor.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'MIGRATIONS_INCONSISTENT', level: 'error' }),
+        expect.objectContaining({ code: 'ALIAS_CONFLICTS_FOUND', level: 'error' }),
+      ]),
+    );
     await client.close();
   });
 

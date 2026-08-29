@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 import { createAgentKudosMcpServer } from '../src/mcp/index.js';
+import type { AgentKudosConfigOverrides } from '../src/types.js';
 import { tempHome, testClient } from './helpers.js';
 
 async function setupRuntime(home: string) {
@@ -15,10 +16,12 @@ async function setupRuntime(home: string) {
 async function connectRuntime(
   home: string,
   actor: { kind: 'agent'; id: string; displayName: string },
+  config?: AgentKudosConfigOverrides,
 ) {
   const runtime = await createAgentKudosMcpServer({
     home,
     actor,
+    ...(config ? { config } : {}),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const protocolClient = new Client({ name: 'agent-kudos-test', version: '1.0.0' });
@@ -168,6 +171,17 @@ describe('MCP protocol integration', () => {
 
     const inbox = await protocolClient.readResource({ uri: 'kudos://agents/gracie/inbox' });
     expect(inbox.contents).toHaveLength(1);
+    const wins = await protocolClient.readResource({ uri: 'kudos://agents/codex/wins' });
+    const winsPage = JSON.parse((wins.contents[0] as { text: string }).text) as {
+      items: Array<{ id: string }>;
+      limit: number;
+      hasMore: boolean;
+    };
+    expect(winsPage).toMatchObject({
+      items: [{ id: kudosId }],
+      limit: 10,
+      hasMore: false,
+    });
     await expect(
       protocolClient.readResource({ uri: 'kudos://agents/codex/inbox' }),
     ).rejects.toThrow();
@@ -228,5 +242,41 @@ describe('MCP protocol integration', () => {
     expect(visible.isError).not.toBe(true);
     await codex.protocolClient.close();
     await codex.runtime.client.close();
+  });
+
+  it('keeps private statistics scoped to the configured actor', async () => {
+    const home = tempHome();
+    const setup = await testClient(home);
+    await setup.agents.create({ id: 'gracie', displayName: 'Gracie' });
+    await setup.agents.create({ id: 'codex', displayName: 'Codex' });
+    await setup.agents.create({ id: 'mycroft', displayName: 'Mycroft' });
+    await setup.kudos.give({
+      recipientAgentId: 'gracie',
+      title: 'Visible recognition',
+      reason: 'This local recognition is visible to all local actors.',
+      visibility: 'local',
+    });
+    await setup.kudos.give({
+      recipientAgentId: 'codex',
+      title: 'Private recognition',
+      reason: 'This should not influence an unrelated actor’s statistics.',
+      visibility: 'private',
+    });
+    await setup.close();
+
+    const mycroft = await connectRuntime(
+      home,
+      { kind: 'agent', id: 'mycroft', displayName: 'Mycroft' },
+      { includePrivateInStats: true },
+    );
+    const result = await mycroft.protocolClient.callTool({
+      name: 'kudos_stats',
+      arguments: {},
+    });
+    expect(result.structuredContent).toMatchObject({
+      data: { stats: { total: 1, byAgent: { gracie: 1 } } },
+    });
+    await mycroft.protocolClient.close();
+    await mycroft.runtime.client.close();
   });
 });

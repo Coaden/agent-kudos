@@ -28,5 +28,6 @@ All notable changes will be documented here. The format follows [Keep a Changelo
 - Unsupported event rows no longer prevent tolerant reads or raw export; diagnostics identify exact row IDs and writes fail closed.
 - SQLite database, WAL, shared-memory, and backup files are restricted to the current user where POSIX modes are supported.
 - CLI exit codes no longer leak between embedded invocations, and missing wins projections produce actionable errors.
+- Doctor now detects current-state acknowledgment or revocation drift, migration metadata problems, and alias-to-identity conflicts; statistics preserve actor visibility when private inclusion is enabled; read-only V1 schema errors provide migration guidance.
 
 [Unreleased]: https://github.com/Coaden/agent-kudos/commits/main

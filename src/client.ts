@@ -392,7 +392,7 @@ export class KudosClient {
     }
     const records: KudosSummary[] = [];
     let cursor: string | undefined;
-    const viewer: ActorIdentity = { kind: 'human', id: 'local-stats' };
+    const viewer = this.actor;
     let hasMore = true;
     while (hasMore) {
       const page = this.storage.listKudosSummaries(
@@ -487,14 +487,30 @@ export class KudosClient {
           message: `${eventScan.events.length} canonical event${eventScan.events.length === 1 ? '' : 's'} validated.`,
         });
       }
-      const indexCounts = this.storage.currentIndexCounts();
+      const indexHealth = this.storage.currentIndexHealth();
+      const indexValid =
+        indexHealth.given === indexHealth.indexed && indexHealth.stateMismatches === 0;
       diagnostics.push({
-        level: indexCounts.given === indexCounts.indexed ? 'ok' : 'error',
-        code:
-          indexCounts.given === indexCounts.indexed
-            ? 'CURRENT_INDEX_VALID'
-            : 'CURRENT_INDEX_INCONSISTENT',
-        message: `${indexCounts.indexed} of ${indexCounts.given} kudos are present in the current-state index.`,
+        level: indexValid ? 'ok' : 'error',
+        code: indexValid ? 'CURRENT_INDEX_VALID' : 'CURRENT_INDEX_INCONSISTENT',
+        message: `${indexHealth.indexed} of ${indexHealth.given} kudos are present in the current-state index; ${indexHealth.stateMismatches} state mismatch${indexHealth.stateMismatches === 1 ? '' : 'es'} detected.`,
+      });
+      const migrationState = this.storage.migrationState();
+      const migrationsValid =
+        migrationState.schemaVersion === 2 &&
+        JSON.stringify(migrationState.appliedVersions) === JSON.stringify([1, 2]);
+      diagnostics.push({
+        level: migrationsValid ? 'ok' : 'error',
+        code: migrationsValid ? 'MIGRATIONS_VALID' : 'MIGRATIONS_INCONSISTENT',
+        message: `Database schema version is ${migrationState.schemaVersion}; recorded migrations: ${migrationState.appliedVersions.join(', ') || 'none'}.`,
+      });
+      const aliasConflicts = this.storage.aliasIdentityConflicts();
+      diagnostics.push({
+        level: aliasConflicts.length ? 'error' : 'ok',
+        code: aliasConflicts.length ? 'ALIAS_CONFLICTS_FOUND' : 'ALIASES_VALID',
+        message: aliasConflicts.length
+          ? `Aliases collide with direct agent identities: ${aliasConflicts.map((item) => `${item.alias}→${item.agentId}`).join(', ')}.`
+          : 'No aliases collide with direct agent identities.',
       });
       const expected = this.projections.expectedPaths();
       const manifest = this.storage.projectionManifest().sort();

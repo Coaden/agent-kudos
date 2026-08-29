@@ -324,6 +324,12 @@ export class KudosStorage {
       (this.db().prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
     );
     if (version !== 2) {
+      if (version === 1) {
+        throw new KudosError(
+          'UNSUPPORTED_SCHEMA',
+          'Database schema version 1 requires migration. Open this home once with readOnly: false, then retry the read-only client.',
+        );
+      }
       throw new KudosError(
         'UNSUPPORTED_SCHEMA',
         `Expected database schema version 2; found ${version}.`,
@@ -625,7 +631,7 @@ export class KudosStorage {
     };
   }
 
-  currentIndexCounts(): { given: number; indexed: number } {
+  currentIndexHealth(): { given: number; indexed: number; stateMismatches: number } {
     const given = Number(
       (
         this.db()
@@ -637,7 +643,49 @@ export class KudosStorage {
       (this.db().prepare('SELECT COUNT(*) AS count FROM kudos_current').get() as { count: number })
         .count,
     );
-    return { given, indexed };
+    const stateMismatches = Number(
+      (
+        this.db()
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM kudos_current k
+             WHERE k.status != CASE WHEN EXISTS (
+               SELECT 1 FROM events e
+               WHERE e.type = 'kudos.acknowledged' AND e.kudos_id = k.kudos_id
+             ) THEN 'acknowledged' ELSE 'unacknowledged' END
+             OR k.revocation_status != CASE WHEN EXISTS (
+               SELECT 1 FROM events e
+               WHERE e.type = 'kudos.revoked' AND e.kudos_id = k.kudos_id
+             ) THEN 'revoked' ELSE 'active' END`,
+          )
+          .get() as { count: number }
+      ).count,
+    );
+    return { given, indexed, stateMismatches };
+  }
+
+  migrationState(): { schemaVersion: number; appliedVersions: number[] } {
+    const schemaVersion = Number(
+      (this.db().prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
+    );
+    const appliedVersions = (
+      this.db()
+        .prepare('SELECT version FROM schema_migrations ORDER BY version')
+        .all() as unknown as Array<{
+        version: number;
+      }>
+    ).map((row) => Number(row.version));
+    return { schemaVersion, appliedVersions };
+  }
+
+  aliasIdentityConflicts(): Array<{ alias: string; agentId: string }> {
+    return this.db()
+      .prepare(
+        `SELECT x.alias, x.agent_id AS agentId
+         FROM aliases x JOIN agents a ON a.id = x.alias
+         ORDER BY x.alias`,
+      )
+      .all() as unknown as Array<{ alias: string; agentId: string }>;
   }
 
   private maxEventSequence(): number {

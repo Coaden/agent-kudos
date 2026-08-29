@@ -38,6 +38,10 @@ Events receive a monotonic ingestion sequence inside the write transaction. That
 
 `kudos_current` contains only bounded summary fields and current acknowledgment/revocation state. It is updated in the same transaction as each canonical event and can be rebuilt from events during migration. `doctor` checks its record count. Full reasons, evidence, notes, source data, and metadata remain only in canonical events and are returned through an explicit one-record detail read.
 
+`doctor` also compares indexed acknowledgment and revocation state with canonical events. Missing rows or state drift produce `CURRENT_INDEX_INCONSISTENT`; `kudos rebuild` repairs the derived index. A schema version 1 home must be opened once by a writable client to migrate before a read-only client can use it.
+
+Migration metadata and alias-to-direct-identity collisions are also checked by `doctor`. Unsupported database versions fail closed during client initialization, before any query or diagnostic can interpret the schema.
+
 Actor-scoped idempotency uses a unique index on `(actor kind, actor ID, idempotency key)` for `kudos.given` events. Similar titles or reasons are not treated as duplicates.
 
 ## Generated files

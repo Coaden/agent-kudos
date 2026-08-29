@@ -354,6 +354,7 @@ Provide:
 - One-record full-detail reads; never include reason, evidence, notes, source, or metadata in discovery summaries
 - Filters for actor, recipient, tag, date, visibility, acknowledgment status, and revocation status
 - Statistics grouped by agent, actor, tag, and date range
+- Private statistics remain scoped by caller visibility even when private-count inclusion is enabled
 - A read-only mode
 - A doctor/diagnostics API
 - A migration framework keyed by `schemaVersion`
@@ -799,6 +800,7 @@ Test at least:
 - Append-only event update/delete protection
 - SQLite schema migrations
 - SQLite integrity diagnostics
+- Current-state index count and acknowledgment/revocation consistency diagnostics, with repair through rebuild
 - WAL configuration, busy timeout, and bounded busy retries
 - Transactionally consistent backup and restore
 - Concurrent kudos writes

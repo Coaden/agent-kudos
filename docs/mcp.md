@@ -106,6 +106,8 @@ Edit `~/.agents/kudos/config.json` while the server is stopped:
 
 Local filesystem owners retain ultimate control. Actor binding limits ordinary MCP behavior; it is not cryptographic authentication.
 
+`includePrivateInStats: false` excludes all private kudos from statistics. When enabled, private kudos are included only if the bound actor could already view them as the recipient, giver, or a human actor; the option never bypasses actor visibility.
+
 `system` is an automation identity, not an implicit administrator or agent impersonation mechanism. It cannot self-award through a matching agent ID, acknowledge recipient kudos, request administrative revocation, or revoke another actor’s kudos. Bind a human actor only to a process the local owner intentionally trusts with administrative authority.
 
 Configuration precedence is explicit API/CLI options, validated environment variables, `config.json`, then safe defaults. Supported policy environment variables are `AGENT_KUDOS_DEFAULT_VISIBILITY`, `AGENT_KUDOS_ALLOW_SELF_AWARDS`, `AGENT_KUDOS_ALLOW_AGENT_CREATION_VIA_MCP`, `AGENT_KUDOS_ALLOW_REBUILD_VIA_MCP`, `AGENT_KUDOS_INCLUDE_PRIVATE_IN_STATS`, `AGENT_KUDOS_WRITE_WINS_MARKDOWN`, and `AGENT_KUDOS_WRITE_INBOX_ENTRIES`. Boolean values must be exactly `true` or `false`; arbitrary JSON is never accepted from the environment.

@@ -102,7 +102,7 @@ kudos doctor
 kudos rebuild
 ```
 
-`doctor` checks SQLite integrity and journal mode, event validation, schema compatibility, projection state, and unsafe agent-directory symlinks. Unsupported or malformed events are reported with their storage row IDs. An unhealthy result uses exit code 5 and does not contaminate later in-process CLI invocations.
+`doctor` checks SQLite integrity and journal mode, event validation, migration metadata, current-state consistency, alias-to-identity conflicts, projection state, and unsafe agent-directory symlinks. Unsupported or malformed events are reported with their storage row IDs. Unsupported database versions fail during initialization before diagnostics can run. An unhealthy result uses exit code 5 and does not contaminate later in-process CLI invocations.
 
 `rebuild` regenerates both the SQLite current-state query index and filesystem projections from canonical append-only events.
 
