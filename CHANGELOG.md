@@ -11,6 +11,10 @@ All notable changes will be documented here. The format follows [Keep a Changelo
 - Explicit, dry-run-first `kudos skill install`, `status`, and `uninstall` commands for verified Codex and Claude Code layouts, including owned-copy version checks, opt-in links, conflict protection, and actor-bound MCP command generation.
 - A runtime-aware README prompt that users can paste into an agent to install, configure, verify, and summarize an Agent Kudos integration without guessing unsupported harness conventions.
 
+### Fixed
+
+- Package smoke checks accept both npm 11's array-shaped and npm 12's package-keyed `npm pack --json` output.
+
 ## [0.1.0] - 2026-08-29
 
 ### Added

@@ -18,7 +18,9 @@ try {
   const packJson = JSON.parse(
     run('npm', ['pack', '--json', '--pack-destination', temporary], project),
   );
-  const packed = packJson[0];
+  const packRecords = Array.isArray(packJson) ? packJson : Object.values(packJson);
+  if (packRecords.length !== 1) throw new Error('npm pack returned an unexpected result.');
+  const packed = packRecords[0];
   if (!packed?.filename || !Array.isArray(packed.files))
     throw new Error('npm pack returned no file manifest.');
   const names = packed.files.map((file) => file.path);
