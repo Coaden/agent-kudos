@@ -25,6 +25,7 @@ All notable changes will be documented here. The format follows [Keep a Changelo
 
 ### Fixed
 
+- npm publish now preserves both CLI binary mappings in normalized package metadata.
 - Unsupported event rows no longer prevent tolerant reads or raw export; diagnostics identify exact row IDs and writes fail closed.
 - SQLite database, WAL, shared-memory, and backup files are restricted to the current user where POSIX modes are supported.
 - CLI exit codes no longer leak between embedded invocations, and missing wins projections produce actionable errors.

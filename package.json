@@ -55,8 +55,8 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "kudos": "./dist/cli.js",
-    "agent-kudos-mcp": "./dist/mcp-server.js"
+    "kudos": "dist/cli.js",
+    "agent-kudos-mcp": "dist/mcp-server.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

@@ -55,6 +55,12 @@ try {
   );
   if (packageJson.name !== 'agent-kudos')
     throw new Error('Installed package metadata is incorrect.');
+  if (
+    packageJson.bin?.kudos !== 'dist/cli.js' ||
+    packageJson.bin?.['agent-kudos-mcp'] !== 'dist/mcp-server.js'
+  ) {
+    throw new Error('Installed package binary metadata is incorrect.');
+  }
   const kudosBin = join(consumer, 'node_modules', '.bin', 'kudos');
   const mcpBin = join(consumer, 'node_modules', '.bin', 'agent-kudos-mcp');
   run(kudosBin, ['--help'], consumer);
