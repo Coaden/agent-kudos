@@ -12,7 +12,7 @@
 [![MCP](https://img.shields.io/badge/MCP-stdio-6f42c1)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[Documentation](https://coaden.github.io/agent-kudos/) · [CLI reference](docs/cli.md) · [MCP guide](docs/mcp.md) · [Security](SECURITY.md)
+[Documentation](https://coaden.github.io/agent-kudos/) · [Research paper](https://coaden.github.io/agent-kudos/research/agent-kudos-paper.html) · [CLI reference](docs/cli.md) · [MCP guide](docs/mcp.md) · [Security](SECURITY.md)
 
 </div>
 

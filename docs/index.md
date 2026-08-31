@@ -21,6 +21,7 @@ Agent-facing reads are deliberately context-safe. Lists return only 10 compact s
 - [Storage format](storage-format.md)
 - [Backup and recovery](recovery.md)
 - [Examples](examples.md)
+- [Research paper](research/agent-kudos-paper.md)
 - [Architecture](https://github.com/Coaden/agent-kudos/blob/main/ARCHITECTURE.md)
 - [Security model](https://github.com/Coaden/agent-kudos/blob/main/SECURITY.md)
 - [Release process](releasing.md)
